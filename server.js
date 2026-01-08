@@ -83,7 +83,7 @@ function escapeHtml(text) {
 }
 
 // Generate the form page HTML
-function generateFormPage(id, subject, body, status = 'loaded') {
+function generateFormPage(id, email, subject, body, status = 'loaded') {
     const statusText = status === 'loaded' ? 'Email loaded - ready to edit' :
         status === 'expired' ? 'This link has expired' :
             status === 'notfound' ? 'Email not found' : 'Ready';
@@ -255,6 +255,11 @@ function generateFormPage(id, subject, body, status = 'loaded') {
             </div>
             <form id="emailForm">
                 <input type="hidden" id="requestId" value="${escapeHtml(id)}">
+                <input type="hidden" id="contactEmail" value="${escapeHtml(email)}">
+                <div class="form-group">
+                    <label for="emailDisplay">Contact Email <span>(Read-only identifier)</span></label>
+                    <input type="text" id="emailDisplay" name="emailDisplay" value="${escapeHtml(email)}" disabled style="opacity: 0.7; cursor: not-allowed;">
+                </div>
                 <div class="form-group">
                     <label for="subject">Subject <span>(Email subject line)</span></label>
                     <input type="text" id="subject" name="subject" value="${escapeHtml(subject)}" ${status !== 'loaded' ? 'disabled' : ''}>
@@ -313,6 +318,7 @@ function generateFormPage(id, subject, body, status = 'loaded') {
                 
                 const subject = document.getElementById('subject').value.trim();
                 const body = document.getElementById('body').value.trim();
+                const contactEmail = document.getElementById('contactEmail').value;
 
                 if (!subject && !body) {
                     showMessage('Please enter at least a subject or body', false);
@@ -329,6 +335,7 @@ function generateFormPage(id, subject, body, status = 'loaded') {
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             requestId: requestId,
+                            email: contactEmail,
                             subject: subject,
                             body: body,
                             timestamp: new Date().toISOString(),
@@ -380,6 +387,7 @@ const server = http.createServer(async (req, res) => {
 
             // Store the email data with timestamp
             emailStore.set(id, {
+                email: data.email || '',  // Contact email (read-only identifier)
                 subject: data.subject || '',
                 body: data.body || '',
                 createdAt: Date.now(),
@@ -394,7 +402,7 @@ const server = http.createServer(async (req, res) => {
 
             const editLink = `${baseUrl}/edit/${id}`;
 
-            console.log(`[Created] New request: ${id}`);
+            console.log(`[Created] New request: ${id} | Email: ${data.email || 'N/A'}`);
             console.log(`[Link] ${editLink}`);
 
             // Return JSON with the link
@@ -403,6 +411,7 @@ const server = http.createServer(async (req, res) => {
                 success: true,
                 requestId: id,
                 editLink: editLink,
+                email: data.email || '',
                 message: 'Email edit request created. Send this link to the user.',
                 expiresIn: '24 hours'
             }));
@@ -424,20 +433,20 @@ const server = http.createServer(async (req, res) => {
         if (!emailData) {
             // Not found or expired
             res.writeHead(404, { 'Content-Type': 'text/html' });
-            res.end(generateFormPage(id, '', '', 'notfound'));
+            res.end(generateFormPage(id, '', '', '', 'notfound'));
             return;
         }
 
         if (emailData.submitted) {
             // Already submitted
             res.writeHead(200, { 'Content-Type': 'text/html' });
-            res.end(generateFormPage(id, emailData.subject, emailData.body, 'expired'));
+            res.end(generateFormPage(id, emailData.email || '', emailData.subject, emailData.body, 'expired'));
             return;
         }
 
         // Show the form with the data
         res.writeHead(200, { 'Content-Type': 'text/html' });
-        res.end(generateFormPage(id, emailData.subject, emailData.body, 'loaded'));
+        res.end(generateFormPage(id, emailData.email || '', emailData.subject, emailData.body, 'loaded'));
         return;
     }
 
@@ -479,6 +488,7 @@ const server = http.createServer(async (req, res) => {
         res.end(JSON.stringify({
             found: true,
             status: emailData.submitted ? 'submitted' : 'pending',
+            email: emailData.email || '',
             subject: emailData.subject,
             body: emailData.body,
             createdAt: new Date(emailData.createdAt).toISOString(),

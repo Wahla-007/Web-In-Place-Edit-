@@ -55,10 +55,13 @@ POST https://email-editor.onrender.com/
 Content-Type: application/json
 
 {
+  "email": "john.doe@example.com",
   "subject": "Your email subject",
   "body": "Your email body content"
 }
 ```
+
+**Note:** The `email` field is a contact identifier that will be passed through the entire workflow. It's displayed as read-only in the form and sent back to n8n with the edited content.
 
 ### Receive data FROM the editor:
 Set up another webhook in n8n to receive the edited email.
