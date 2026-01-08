@@ -10,7 +10,61 @@ const crypto = require('crypto');
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.RENDER_EXTERNAL_URL || process.env.HOST || `http://localhost:${PORT}`;
 const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || 'https://your-n8n-instance.com/webhook/your-webhook-id';
+const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET || 'your-secret-token-change-this'; // Set in environment!
 // ============================================================
+
+// ============================================================
+// SECURITY: Rate Limiting
+// ============================================================
+const rateLimit = new Map();
+const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute
+const MAX_REQUESTS_PER_WINDOW = 10; // 10 requests per minute
+
+function getRealIP(req) {
+    return req.headers['x-forwarded-for']?.split(',')[0].trim() ||
+        req.headers['x-real-ip'] ||
+        req.connection.remoteAddress ||
+        'unknown';
+}
+
+function checkRateLimit(ip) {
+    const now = Date.now();
+    const requests = rateLimit.get(ip) || [];
+
+    // Filter out old requests outside the time window
+    const recentRequests = requests.filter(timestamp => now - timestamp < RATE_LIMIT_WINDOW);
+
+    // Check if limit exceeded
+    if (recentRequests.length >= MAX_REQUESTS_PER_WINDOW) {
+        return false;
+    }
+
+    // Add current request
+    recentRequests.push(now);
+    rateLimit.set(ip, recentRequests);
+    return true;
+}
+
+// Cleanup rate limit data every 5 minutes
+setInterval(() => {
+    const now = Date.now();
+    for (const [ip, requests] of rateLimit.entries()) {
+        const recentRequests = requests.filter(timestamp => now - timestamp < RATE_LIMIT_WINDOW);
+        if (recentRequests.length === 0) {
+            rateLimit.delete(ip);
+        } else {
+            rateLimit.set(ip, recentRequests);
+        }
+    }
+}, 5 * 60 * 1000);
+
+// ============================================================
+// SECURITY: Token Authentication
+// ============================================================
+function verifyWebhookToken(req) {
+    const token = req.headers['x-webhook-secret'] || req.headers['authorization']?.replace('Bearer ', '');
+    return token === WEBHOOK_SECRET;
+}
 
 // In-memory storage for email data (keyed by unique ID)
 // In production, you might want to use Redis or a database
@@ -376,12 +430,36 @@ const server = http.createServer(async (req, res) => {
     // Returns JSON with unique link
     // =====================================================
     if (req.method === 'POST' && (pathname === '/' || pathname === '/create')) {
+        // SECURITY: Check token authentication
+        if (!verifyWebhookToken(req)) {
+            console.log('[Security] Unauthorized create request - invalid token');
+            res.writeHead(401, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+                success: false,
+                error: 'Unauthorized: Invalid or missing webhook secret'
+            }));
+            return;
+        }
+
+        // SECURITY: Check rate limit
+        const clientIP = getRealIP(req);
+        if (!checkRateLimit(clientIP)) {
+            console.log(`[Security] Rate limit exceeded for IP: ${clientIP}`);
+            res.writeHead(429, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+                success: false,
+                error: 'Too many requests. Please try again later.'
+            }));
+            return;
+        }
+
         try {
             const data = await parseBody(req);
             const id = generateId();
 
             // Store the email data with timestamp
             emailStore.set(id, {
+                email: data.email || '',  // Contact email (read-only identifier)
                 subject: data.subject || '',
                 body: data.body || '',
                 createdAt: Date.now(),
@@ -420,6 +498,15 @@ const server = http.createServer(async (req, res) => {
     // GET /edit/:id - Show the form for a specific request
     // =====================================================
     if (req.method === 'GET' && pathname.startsWith('/edit/')) {
+        // SECURITY: Check rate limit to prevent brute-force ID guessing
+        const clientIP = getRealIP(req);
+        if (!checkRateLimit(clientIP)) {
+            console.log(`[Security] Rate limit exceeded for IP: ${clientIP}`);
+            res.writeHead(429, { 'Content-Type': 'text/html' });
+            res.end('<h1>429 Too Many Requests</h1><p>Please try again later.</p>');
+            return;
+        }
+
         const id = pathname.replace('/edit/', '');
         const emailData = emailStore.get(id);
 

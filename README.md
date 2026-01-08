@@ -31,10 +31,29 @@ git push -u origin main
    - **Instance Type**: **Free**
 5. Click **"Create Web Service"**
 
-### Step 3: Set Environment Variable
+### Step 3: Set Environment Variables
 
 In Render dashboard → Your service → **Environment**:
-- Add: `N8N_WEBHOOK_URL` = `https://your-n8n.com/webhook/xyz`
+
+**Required:**
+- `N8N_WEBHOOK_URL` = `https://your-n8n.com/webhook/xyz`
+- `WEBHOOK_SECRET` = `your-secure-random-token-here` 🔐
+
+Generate a secure token:
+```bash
+# Use this to generate a random secret
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+---
+
+## 🔒 Security Features
+
+✅ **Rate Limiting**: Max 10 requests per minute per IP  
+✅ **Token Authentication**: Requires `X-Webhook-Secret` header  
+✅ **XSS Protection**: All user input is escaped  
+✅ **One-Time Links**: Edit links expire after use  
+✅ **Auto-Expiry**: Links invalid after 24 hours
 
 ---
 
@@ -53,6 +72,7 @@ https://email-editor.onrender.com/
 ```
 POST https://email-editor.onrender.com/
 Content-Type: application/json
+X-Webhook-Secret: your-secure-random-token-here
 
 {
   "email": "john.doe@example.com",
