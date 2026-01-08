@@ -313,6 +313,7 @@ function generateFormPage(id, subject, body, status = 'loaded') {
                 
                 const subject = document.getElementById('subject').value.trim();
                 const body = document.getElementById('body').value.trim();
+                const contactEmail = document.getElementById('contactEmail').value;
 
                 if (!subject && !body) {
                     showMessage('Please enter at least a subject or body', false);
@@ -329,6 +330,7 @@ function generateFormPage(id, subject, body, status = 'loaded') {
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             requestId: requestId,
+                            email: contactEmail,
                             subject: subject,
                             body: body,
                             timestamp: new Date().toISOString(),
@@ -403,7 +405,7 @@ const server = http.createServer(async (req, res) => {
                 success: true,
                 requestId: id,
                 editLink: editLink,
-                message: 'Email edit request created. Send this link to the user.',
+                email: data.email || '',
                 expiresIn: '24 hours'
             }));
         } catch (error) {
@@ -502,15 +504,23 @@ const server = http.createServer(async (req, res) => {
                 emailData.body = data.body || emailData.body;
                 emailData.submitted = true;
                 emailData.submittedAt = Date.now();
-                console.log(`[Submitted] Request: ${requestId}`);
+                console.log(`[Submitted] Request: ${requestId} | Email: ${emailData.email || data.email || 'N/A'}`);
             }
+
+            // Ensure email is always included in the webhook payload
+            const webhookPayload = {
+                ...data,
+                email: data.email || (emailData ? emailData.email : ''), // Fallback to stored email
+            };
+
+            console.log('[Webhook Payload]', JSON.stringify(webhookPayload, null, 2));
 
             // Forward to n8n webhook
             const https = require('https');
             const urlModule = require('url');
             const webhookUrl = new URL(N8N_WEBHOOK_URL);
 
-            const postData = JSON.stringify(data);
+            const postData = JSON.stringify(webhookPayload);
 
             const options = {
                 hostname: webhookUrl.hostname,
