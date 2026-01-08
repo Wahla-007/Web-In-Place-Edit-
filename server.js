@@ -322,15 +322,9 @@ function generateFormPage(id, subject, body, status = 'loaded') {
                 setLoading(true);
 
                 try {
-                    // First, mark as submitted on server
-                    await fetch('/submit/' + requestId, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ subject, body })
-                    });
-
-                    // Then send to n8n webhook
-                    const response = await fetch(WEBHOOK_URL, {
+                    // Send to our server's webhook proxy endpoint
+                    // The server will forward it to n8n, avoiding CORS
+                    const response = await fetch('/webhook', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
@@ -490,6 +484,74 @@ const server = http.createServer(async (req, res) => {
             createdAt: new Date(emailData.createdAt).toISOString(),
             submittedAt: emailData.submittedAt ? new Date(emailData.submittedAt).toISOString() : null
         }));
+        return;
+    }
+
+    // =====================================================
+    // POST /webhook - Proxy to n8n webhook (avoids CORS)
+    // =====================================================
+    if (req.method === 'POST' && pathname === '/webhook') {
+        try {
+            const data = await parseBody(req);
+            const requestId = data.requestId;
+
+            // Mark as submitted in our store
+            const emailData = emailStore.get(requestId);
+            if (emailData) {
+                emailData.subject = data.subject || emailData.subject;
+                emailData.body = data.body || emailData.body;
+                emailData.submitted = true;
+                emailData.submittedAt = Date.now();
+                console.log(`[Submitted] Request: ${requestId}`);
+            }
+
+            // Forward to n8n webhook
+            const https = require('https');
+            const urlModule = require('url');
+            const webhookUrl = new URL(N8N_WEBHOOK_URL);
+
+            const postData = JSON.stringify(data);
+
+            const options = {
+                hostname: webhookUrl.hostname,
+                port: webhookUrl.port || 443,
+                path: webhookUrl.pathname + webhookUrl.search,
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Content-Length': Buffer.byteLength(postData)
+                }
+            };
+
+            const proxyReq = https.request(options, (proxyRes) => {
+                let responseBody = '';
+                proxyRes.on('data', (chunk) => {
+                    responseBody += chunk;
+                });
+                proxyRes.on('end', () => {
+                    console.log(`[Webhook Forward] Status: ${proxyRes.statusCode}`);
+                    res.writeHead(proxyRes.statusCode, { 'Content-Type': 'application/json' });
+                    res.end(responseBody || JSON.stringify({ success: true }));
+                });
+            });
+
+            proxyReq.on('error', (error) => {
+                console.error('[Webhook Error]', error);
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({
+                    success: false,
+                    error: 'Failed to forward to webhook',
+                    details: error.message
+                }));
+            });
+
+            proxyReq.write(postData);
+            proxyReq.end();
+        } catch (error) {
+            console.error('Error:', error);
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: false, error: 'Server error' }));
+        }
         return;
     }
 
