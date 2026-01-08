@@ -2,16 +2,38 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const url = require('url');
+const crypto = require('crypto');
 
 // ============================================================
 // CONFIGURATION
 // ============================================================
 const PORT = process.env.PORT || 3000;
+const HOST = process.env.RENDER_EXTERNAL_URL || process.env.HOST || `http://localhost:${PORT}`;
 const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || 'https://your-n8n-instance.com/webhook/your-webhook-id';
 // ============================================================
 
-// Read the HTML template
-const htmlTemplate = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
+// In-memory storage for email data (keyed by unique ID)
+// In production, you might want to use Redis or a database
+const emailStore = new Map();
+
+// Auto-cleanup old entries after 24 hours
+const EXPIRY_TIME = 24 * 60 * 60 * 1000; // 24 hours in ms
+
+function cleanupExpired() {
+    const now = Date.now();
+    for (const [id, data] of emailStore.entries()) {
+        if (now - data.createdAt > EXPIRY_TIME) {
+            emailStore.delete(id);
+            console.log(`[Cleanup] Expired entry: ${id}`);
+        }
+    }
+}
+setInterval(cleanupExpired, 60 * 60 * 1000); // Run cleanup every hour
+
+// Generate unique ID
+function generateId() {
+    return crypto.randomBytes(8).toString('hex');
+}
 
 // Parse request body
 function parseBody(req) {
@@ -22,27 +44,24 @@ function parseBody(req) {
         });
         req.on('end', () => {
             try {
-                // Try JSON first
                 if (req.headers['content-type']?.includes('application/json')) {
                     resolve(JSON.parse(body));
-                }
-                // Try form-urlencoded
-                else if (req.headers['content-type']?.includes('application/x-www-form-urlencoded')) {
+                } else if (req.headers['content-type']?.includes('application/x-www-form-urlencoded')) {
                     const params = new URLSearchParams(body);
                     resolve({
                         subject: params.get('subject') || '',
                         body: params.get('body') || ''
                     });
-                }
-                // Try to auto-detect
-                else if (body.trim().startsWith('{')) {
+                } else if (body.trim().startsWith('{')) {
                     resolve(JSON.parse(body));
-                } else {
+                } else if (body) {
                     const params = new URLSearchParams(body);
                     resolve({
                         subject: params.get('subject') || '',
                         body: params.get('body') || ''
                     });
+                } else {
+                    resolve({ subject: '', body: '' });
                 }
             } catch (e) {
                 resolve({ subject: '', body: '' });
@@ -63,96 +82,461 @@ function escapeHtml(text) {
         .replace(/'/g, '&#039;');
 }
 
-// Generate page with injected data
-function generatePage(subject, body) {
-    // Inject the data into the page using a script that runs on load
-    const dataScript = `
+// Generate the form page HTML
+function generateFormPage(id, subject, body, status = 'loaded') {
+    const statusText = status === 'loaded' ? 'Email loaded - ready to edit' :
+        status === 'expired' ? 'This link has expired' :
+            status === 'notfound' ? 'Email not found' : 'Ready';
+    const statusClass = status === 'loaded' ? 'loaded' : status === 'expired' || status === 'notfound' ? 'error' : '';
+
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Email Editor</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --bg-primary: #0f0f1a;
+            --bg-secondary: #1a1a2e;
+            --bg-tertiary: #252542;
+            --accent-primary: #6366f1;
+            --accent-secondary: #8b5cf6;
+            --accent-glow: rgba(99, 102, 241, 0.3);
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --success: #10b981;
+            --error: #ef4444;
+            --border-color: #334155;
+        }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-primary);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem;
+            position: relative;
+        }
+        body::before {
+            content: '';
+            position: fixed;
+            top: -50%; left: -50%;
+            width: 200%; height: 200%;
+            background: radial-gradient(ellipse at center, var(--accent-glow) 0%, transparent 50%);
+            animation: pulse 8s ease-in-out infinite;
+            pointer-events: none;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 0.3; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(1.1); }
+        }
+        .container { width: 100%; max-width: 700px; position: relative; z-index: 1; }
+        .card {
+            background: linear-gradient(145deg, var(--bg-secondary), var(--bg-tertiary));
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            padding: 2.5rem;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 60px -15px var(--accent-glow);
+        }
+        .header { text-align: center; margin-bottom: 2rem; }
+        .header-icon {
+            width: 60px; height: 60px;
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            border-radius: 16px;
+            display: flex; align-items: center; justify-content: center;
+            margin: 0 auto 1rem;
+            box-shadow: 0 10px 30px -10px var(--accent-glow);
+        }
+        .header-icon svg { width: 32px; height: 32px; fill: white; }
+        h1 { color: var(--text-primary); font-size: 1.75rem; font-weight: 700; margin-bottom: 0.5rem; }
+        .subtitle { color: var(--text-secondary); font-size: 0.95rem; }
+        .form-group { margin-bottom: 1.5rem; }
+        label { display: block; color: var(--text-primary); font-weight: 500; font-size: 0.9rem; margin-bottom: 0.5rem; }
+        label span { color: var(--text-secondary); font-weight: 400; font-size: 0.8rem; }
+        input[type="text"], textarea {
+            width: 100%;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 1rem 1.25rem;
+            color: var(--text-primary);
+            font-family: inherit;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+            outline: none;
+        }
+        input:focus, textarea:focus {
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 0 3px var(--accent-glow);
+        }
+        textarea { min-height: 280px; resize: vertical; line-height: 1.6; }
+        .btn {
+            width: 100%;
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            color: white;
+            border: none;
+            border-radius: 12px;
+            padding: 1rem 2rem;
+            font-family: inherit;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+        .btn:hover { transform: translateY(-2px); box-shadow: 0 10px 30px -10px var(--accent-glow); }
+        .btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+        .btn svg { width: 20px; height: 20px; fill: currentColor; }
+        .message {
+            padding: 1rem 1.25rem;
+            border-radius: 12px;
+            margin-top: 1.5rem;
+            display: none;
+            align-items: center;
+            gap: 0.75rem;
+            font-weight: 500;
+        }
+        .message.success { background: rgba(16, 185, 129, 0.15); border: 1px solid var(--success); color: var(--success); display: flex; }
+        .message.error { background: rgba(239, 68, 68, 0.15); border: 1px solid var(--error); color: var(--error); display: flex; }
+        .message svg { width: 24px; height: 24px; fill: currentColor; }
+        .spinner { width: 20px; height: 20px; border: 2px solid rgba(255,255,255,0.3); border-top-color: white; border-radius: 50%; animation: spin 0.8s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .info-badge {
+            display: inline-flex; align-items: center; gap: 0.5rem;
+            background: var(--bg-tertiary);
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            margin-bottom: 1.5rem;
+        }
+        .info-badge svg { width: 14px; height: 14px; fill: currentColor; }
+        .info-badge.loaded { background: rgba(16, 185, 129, 0.15); color: #10b981; }
+        .info-badge.error { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+        .loading-overlay {
+            position: fixed; inset: 0;
+            background: rgba(15, 15, 26, 0.8);
+            display: none;
+            align-items: center; justify-content: center;
+            z-index: 100;
+        }
+        .loading-overlay.active { display: flex; }
+        .loading-content { text-align: center; color: var(--text-primary); }
+        .loading-spinner { width: 50px; height: 50px; border: 3px solid var(--border-color); border-top-color: var(--accent-primary); border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 1rem; }
+        .request-id { font-size: 0.7rem; color: var(--text-secondary); text-align: center; margin-top: 1.5rem; opacity: 0.5; }
+    </style>
+</head>
+<body>
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-content">
+            <div class="loading-spinner"></div>
+            <p>Sending edited email...</p>
+        </div>
+    </div>
+    <div class="container">
+        <div class="card">
+            <div class="header">
+                <div class="header-icon">
+                    <svg viewBox="0 0 24 24"><path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/></svg>
+                </div>
+                <h1>Edit Email</h1>
+                <p class="subtitle">Review and edit the content below, then submit</p>
+            </div>
+            <div class="info-badge ${statusClass}" id="statusBadge">
+                <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
+                <span id="statusText">${statusText}</span>
+            </div>
+            <form id="emailForm">
+                <input type="hidden" id="requestId" value="${escapeHtml(id)}">
+                <div class="form-group">
+                    <label for="subject">Subject <span>(Email subject line)</span></label>
+                    <input type="text" id="subject" name="subject" value="${escapeHtml(subject)}" ${status !== 'loaded' ? 'disabled' : ''}>
+                </div>
+                <div class="form-group">
+                    <label for="body">Body <span>(Email content - edit in place)</span></label>
+                    <textarea id="body" name="body" ${status !== 'loaded' ? 'disabled' : ''}>${escapeHtml(body)}</textarea>
+                </div>
+                <button type="submit" class="btn" id="submitBtn" ${status !== 'loaded' ? 'disabled' : ''}>
+                    <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+                    <span>Submit Edited Email</span>
+                </button>
+                <div class="message" id="message">
+                    <svg id="messageIcon" viewBox="0 0 24 24"></svg>
+                    <span id="messageText"></span>
+                </div>
+            </form>
+            <div class="request-id">Request ID: ${escapeHtml(id)}</div>
+        </div>
+    </div>
     <script>
-        window.addEventListener('DOMContentLoaded', function() {
-            document.getElementById('subject').value = ${JSON.stringify(subject || '')};
-            document.getElementById('body').value = ${JSON.stringify(body || '')};
-            if (${JSON.stringify(subject || '')} || ${JSON.stringify(body || '')}) {
-                document.getElementById('statusText').textContent = 'Email loaded - ready to edit';
-                document.getElementById('statusBadge').classList.add('loaded');
-                document.getElementById('initLoading').classList.add('hidden');
+        (function() {
+            const WEBHOOK_URL = '${N8N_WEBHOOK_URL}';
+            const form = document.getElementById('emailForm');
+            const submitBtn = document.getElementById('submitBtn');
+            const messageDiv = document.getElementById('message');
+            const messageIcon = document.getElementById('messageIcon');
+            const messageText = document.getElementById('messageText');
+            const loadingOverlay = document.getElementById('loadingOverlay');
+            const requestId = document.getElementById('requestId').value;
+
+            const icons = {
+                success: '<path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>',
+                error: '<path d="M12 2C6.47 2 2 6.47 2 12s4.47 10 10 10 10-4.47 10-10S17.53 2 12 2zm5 13.59L15.59 17 12 13.41 8.41 17 7 15.59 10.59 12 7 8.41 8.41 7 12 10.59 15.59 7 17 8.41 13.41 12 17 15.59z"/>'
+            };
+
+            function showMessage(text, isSuccess) {
+                messageDiv.className = 'message ' + (isSuccess ? 'success' : 'error');
+                messageIcon.innerHTML = isSuccess ? icons.success : icons.error;
+                messageText.textContent = text;
             }
-        });
+
+            function setLoading(isLoading) {
+                loadingOverlay.classList.toggle('active', isLoading);
+                submitBtn.disabled = isLoading;
+                if (isLoading) {
+                    submitBtn.innerHTML = '<div class="spinner"></div><span>Sending...</span>';
+                } else {
+                    submitBtn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg><span>Submit Edited Email</span>';
+                }
+            }
+
+            form.addEventListener('submit', async function(e) {
+                e.preventDefault();
+                messageDiv.className = 'message';
+                
+                const subject = document.getElementById('subject').value.trim();
+                const body = document.getElementById('body').value.trim();
+
+                if (!subject && !body) {
+                    showMessage('Please enter at least a subject or body', false);
+                    return;
+                }
+
+                setLoading(true);
+
+                try {
+                    // First, mark as submitted on server
+                    await fetch('/submit/' + requestId, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ subject, body })
+                    });
+
+                    // Then send to n8n webhook
+                    const response = await fetch(WEBHOOK_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            requestId: requestId,
+                            subject: subject,
+                            body: body,
+                            timestamp: new Date().toISOString(),
+                            source: 'email-editor'
+                        })
+                    });
+
+                    if (!response.ok) throw new Error('HTTP ' + response.status);
+                    showMessage('Email submitted successfully!', true);
+                    submitBtn.disabled = true;
+                } catch (error) {
+                    showMessage('Failed to send: ' + error.message, false);
+                } finally {
+                    setLoading(false);
+                }
+            });
+        })();
     </script>
-    </body>`;
-
-    // Also update the webhook URL in the page
-    let page = htmlTemplate.replace(
-        "const WEBHOOK_URL = 'https://your-n8n-instance.com/webhook/your-webhook-id';",
-        `const WEBHOOK_URL = '${N8N_WEBHOOK_URL}';`
-    );
-
-    // Inject the data script
-    page = page.replace('</body>', dataScript);
-
-    return page;
+</body>
+</html>`;
 }
 
-// Create server
+// Create the server
 const server = http.createServer(async (req, res) => {
     const parsedUrl = url.parse(req.url, true);
+    const pathname = parsedUrl.pathname;
 
-    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+    console.log(`[${new Date().toISOString()}] ${req.method} ${pathname}`);
 
-    // Handle POST to receive email data
-    if (req.method === 'POST' && (parsedUrl.pathname === '/' || parsedUrl.pathname === '/edit')) {
+    // CORS headers
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+    if (req.method === 'OPTIONS') {
+        res.writeHead(200);
+        res.end();
+        return;
+    }
+
+    // =====================================================
+    // POST / or /create - Create new email edit request
+    // Returns JSON with unique link
+    // =====================================================
+    if (req.method === 'POST' && (pathname === '/' || pathname === '/create')) {
         try {
             const data = await parseBody(req);
-            console.log('Received payload:', data);
+            const id = generateId();
 
-            const page = generatePage(data.subject, data.body);
+            // Store the email data with timestamp
+            emailStore.set(id, {
+                subject: data.subject || '',
+                body: data.body || '',
+                createdAt: Date.now(),
+                submitted: false
+            });
 
-            res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-            res.end(page);
+            // Determine the base URL
+            let baseUrl = HOST;
+            if (req.headers.host && !HOST.includes('localhost')) {
+                baseUrl = `https://${req.headers.host}`;
+            }
+
+            const editLink = `${baseUrl}/edit/${id}`;
+
+            console.log(`[Created] New request: ${id}`);
+            console.log(`[Link] ${editLink}`);
+
+            // Return JSON with the link
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+                success: true,
+                requestId: id,
+                editLink: editLink,
+                message: 'Email edit request created. Send this link to the user.',
+                expiresIn: '24 hours'
+            }));
         } catch (error) {
             console.error('Error:', error);
-            res.writeHead(500, { 'Content-Type': 'text/plain' });
-            res.end('Server Error');
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: false, error: 'Server error' }));
         }
         return;
     }
 
-    // Handle GET with query parameters
-    if (req.method === 'GET' && (parsedUrl.pathname === '/' || parsedUrl.pathname === '/edit')) {
-        const subject = parsedUrl.query.subject || '';
-        const body = parsedUrl.query.body || '';
+    // =====================================================
+    // GET /edit/:id - Show the form for a specific request
+    // =====================================================
+    if (req.method === 'GET' && pathname.startsWith('/edit/')) {
+        const id = pathname.replace('/edit/', '');
+        const emailData = emailStore.get(id);
 
-        const page = generatePage(subject, body);
+        if (!emailData) {
+            // Not found or expired
+            res.writeHead(404, { 'Content-Type': 'text/html' });
+            res.end(generateFormPage(id, '', '', 'notfound'));
+            return;
+        }
 
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        res.end(page);
+        if (emailData.submitted) {
+            // Already submitted
+            res.writeHead(200, { 'Content-Type': 'text/html' });
+            res.end(generateFormPage(id, emailData.subject, emailData.body, 'expired'));
+            return;
+        }
+
+        // Show the form with the data
+        res.writeHead(200, { 'Content-Type': 'text/html' });
+        res.end(generateFormPage(id, emailData.subject, emailData.body, 'loaded'));
+        return;
+    }
+
+    // =====================================================
+    // POST /submit/:id - Mark request as submitted
+    // =====================================================
+    if (req.method === 'POST' && pathname.startsWith('/submit/')) {
+        const id = pathname.replace('/submit/', '');
+        const emailData = emailStore.get(id);
+
+        if (emailData) {
+            const data = await parseBody(req);
+            emailData.subject = data.subject || emailData.subject;
+            emailData.body = data.body || emailData.body;
+            emailData.submitted = true;
+            emailData.submittedAt = Date.now();
+            console.log(`[Submitted] Request: ${id}`);
+        }
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true }));
+        return;
+    }
+
+    // =====================================================
+    // GET /status/:id - Check status of a request
+    // =====================================================
+    if (req.method === 'GET' && pathname.startsWith('/status/')) {
+        const id = pathname.replace('/status/', '');
+        const emailData = emailStore.get(id);
+
+        if (!emailData) {
+            res.writeHead(404, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ found: false, status: 'not_found' }));
+            return;
+        }
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+            found: true,
+            status: emailData.submitted ? 'submitted' : 'pending',
+            subject: emailData.subject,
+            body: emailData.body,
+            createdAt: new Date(emailData.createdAt).toISOString(),
+            submittedAt: emailData.submittedAt ? new Date(emailData.submittedAt).toISOString() : null
+        }));
+        return;
+    }
+
+    // =====================================================
+    // GET / - Health check / info
+    // =====================================================
+    if (req.method === 'GET' && pathname === '/') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+            service: 'Email Editor - Human in the Loop',
+            status: 'running',
+            usage: {
+                createRequest: 'POST / with { "subject": "...", "body": "..." }',
+                editForm: 'GET /edit/:requestId',
+                checkStatus: 'GET /status/:requestId'
+            },
+            activeRequests: emailStore.size
+        }));
         return;
     }
 
     // 404 for other routes
-    res.writeHead(404, { 'Content-Type': 'text/plain' });
-    res.end('Not Found');
+    res.writeHead(404, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Not found' }));
 });
 
 server.listen(PORT, () => {
     console.log('');
-    console.log('╔════════════════════════════════════════════════════════════╗');
-    console.log('║           📧 Email Editor Server Running                   ║');
-    console.log('╠════════════════════════════════════════════════════════════╣');
-    console.log(`║  HTTP Endpoint: http://localhost:${PORT}/                     ║`);
-    console.log('╠════════════════════════════════════════════════════════════╣');
-    console.log('║  USAGE:                                                    ║');
-    console.log('║                                                            ║');
-    console.log('║  POST (JSON):                                              ║');
-    console.log(`║    curl -X POST http://localhost:${PORT}/ \\                   ║`);
-    console.log('║      -H "Content-Type: application/json" \\                 ║');
-    console.log('║      -d \'{"subject":"Hello","body":"Email content"}\'       ║');
-    console.log('║                                                            ║');
-    console.log('║  POST (Form):                                              ║');
-    console.log(`║    curl -X POST http://localhost:${PORT}/ \\                   ║`);
-    console.log('║      -d "subject=Hello&body=Email content"                 ║');
-    console.log('║                                                            ║');
-    console.log('║  GET:                                                      ║');
-    console.log(`║    http://localhost:${PORT}/?subject=Hello&body=Content       ║`);
-    console.log('╚════════════════════════════════════════════════════════════╝');
+    console.log('╔════════════════════════════════════════════════════════════════╗');
+    console.log('║           📧 Email Editor Server (Instance-based)              ║');
+    console.log('╠════════════════════════════════════════════════════════════════╣');
+    console.log(`║  Server running at: http://localhost:${PORT}                      ║`);
+    console.log('╠════════════════════════════════════════════════════════════════╣');
+    console.log('║  ENDPOINTS:                                                    ║');
+    console.log('║                                                                ║');
+    console.log('║  POST /           → Create new request, get unique link       ║');
+    console.log('║  GET  /edit/:id   → Show form for specific request            ║');
+    console.log('║  GET  /status/:id → Check if request was submitted            ║');
+    console.log('║                                                                ║');
+    console.log('╠════════════════════════════════════════════════════════════════╣');
+    console.log('║  EXAMPLE:                                                      ║');
+    console.log('║                                                                ║');
+    console.log('║  curl -X POST http://localhost:3000/ \\                        ║');
+    console.log('║    -H "Content-Type: application/json" \\                      ║');
+    console.log('║    -d \'{"subject":"Hello","body":"Content"}\'                  ║');
+    console.log('║                                                                ║');
+    console.log('║  Response: { "editLink": "http://.../edit/abc123" }           ║');
+    console.log('╚════════════════════════════════════════════════════════════════╝');
     console.log('');
 });
