@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: email-editor
+    runtime: node
+    buildCommand: ""
+    startCommand: node server.js
+    envVars:
+      - key: N8N_WEBHOOK_URL
+        sync: false  # You'll set this manually in Render dashboard

@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Email Editor</title>
+    <meta name="description" content="Human-in-the-loop email editor for webhook integration">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg-primary: #0f0f1a;
+            --bg-secondary: #1a1a2e;
+            --bg-tertiary: #252542;
+            --accent-primary: #6366f1;
+            --accent-secondary: #8b5cf6;
+            --accent-glow: rgba(99, 102, 241, 0.3);
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --success: #10b981;
+            --error: #ef4444;
+            --border-color: #334155;
+        }
+
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-primary);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem;
+            position: relative;
+            overflow-x: hidden;
+        }
+
+        body::before {
+            content: '';
+            position: fixed;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(ellipse at center, var(--accent-glow) 0%, transparent 50%);
+            animation: pulse 8s ease-in-out infinite;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 0.3;
+                transform: scale(1);
+            }
+
+            50% {
+                opacity: 0.5;
+                transform: scale(1.1);
+            }
+        }
+
+        .container {
+            width: 100%;
+            max-width: 700px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .card {
+            background: linear-gradient(145deg, var(--bg-secondary), var(--bg-tertiary));
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            padding: 2.5rem;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5),
+                0 0 60px -15px var(--accent-glow);
+            backdrop-filter: blur(10px);
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        .header-icon {
+            width: 60px;
+            height: 60px;
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 1rem;
+            box-shadow: 0 10px 30px -10px var(--accent-glow);
+        }
+
+        .header-icon svg {
+            width: 32px;
+            height: 32px;
+            fill: white;
+        }
+
+        h1 {
+            color: var(--text-primary);
+            font-size: 1.75rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+            letter-spacing: -0.025em;
+        }
+
+        .subtitle {
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+            font-weight: 400;
+        }
+
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        label {
+            display: block;
+            color: var(--text-primary);
+            font-weight: 500;
+            font-size: 0.9rem;
+            margin-bottom: 0.5rem;
+        }
+
+        label span {
+            color: var(--text-secondary);
+            font-weight: 400;
+            font-size: 0.8rem;
+        }
+
+        input[type="text"],
+        textarea {
+            width: 100%;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 1rem 1.25rem;
+            color: var(--text-primary);
+            font-family: inherit;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+            outline: none;
+        }
+
+        input[type="text"]:focus,
+        textarea:focus {
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 0 3px var(--accent-glow);
+        }
+
+        input::placeholder,
+        textarea::placeholder {
+            color: var(--text-secondary);
+            opacity: 0.6;
+        }
+
+        textarea {
+            min-height: 280px;
+            resize: vertical;
+            line-height: 1.6;
+        }
+
+        .btn {
+            width: 100%;
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            color: white;
+            border: none;
+            border-radius: 12px;
+            padding: 1rem 2rem;
+            font-family: inherit;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+            transition: left 0.5s ease;
+        }
+
+        .btn:hover::before {
+            left: 100%;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px -10px var(--accent-glow);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn svg {
+            width: 20px;
+            height: 20px;
+            fill: currentColor;
+        }
+
+        .message {
+            padding: 1rem 1.25rem;
+            border-radius: 12px;
+            margin-top: 1.5rem;
+            display: none;
+            align-items: center;
+            gap: 0.75rem;
+            font-weight: 500;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .message.success {
+            background: rgba(16, 185, 129, 0.15);
+            border: 1px solid var(--success);
+            color: var(--success);
+            display: flex;
+        }
+
+        .message.error {
+            background: rgba(239, 68, 68, 0.15);
+            border: 1px solid var(--error);
+            color: var(--error);
+            display: flex;
+        }
+
+        .message svg {
+            width: 24px;
+            height: 24px;
+            fill: currentColor;
+            flex-shrink: 0;
+        }
+
+        .spinner {
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .info-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: var(--bg-tertiary);
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            margin-bottom: 1.5rem;
+        }
+
+        .info-badge svg {
+            width: 14px;
+            height: 14px;
+            fill: currentColor;
+        }
+
+        .info-badge.loaded {
+            background: rgba(16, 185, 129, 0.15);
+            color: #10b981;
+        }
+
+        /* Loading state overlay */
+        .loading-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 15, 26, 0.8);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+            backdrop-filter: blur(4px);
+        }
+
+        .loading-overlay.active {
+            display: flex;
+        }
+
+        .loading-content {
+            text-align: center;
+            color: var(--text-primary);
+        }
+
+        .loading-spinner {
+            width: 50px;
+            height: 50px;
+            border: 3px solid var(--border-color);
+            border-top-color: var(--accent-primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1rem;
+        }
+
+        /* Initial loading screen */
+        .init-loading {
+            position: fixed;
+            inset: 0;
+            background: var(--bg-primary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 200;
+            transition: opacity 0.3s ease;
+        }
+
+        .init-loading.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .init-loading-content {
+            text-align: center;
+            color: var(--text-primary);
+        }
+
+        .init-loading-content h2 {
+            margin-top: 1rem;
+            font-size: 1.25rem;
+        }
+
+        .init-loading-content p {
+            color: var(--text-secondary);
+            margin-top: 0.5rem;
+        }
+
+        @media (max-width: 640px) {
+            body {
+                padding: 1rem;
+            }
+
+            .card {
+                padding: 1.5rem;
+            }
+
+            h1 {
+                font-size: 1.5rem;
+            }
+
+            textarea {
+                min-height: 200px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Initial loading screen while waiting for data -->
+    <div class="init-loading" id="initLoading">
+        <div class="init-loading-content">
+            <div class="loading-spinner"></div>
+            <h2>Email Editor</h2>
+            <p>Waiting for email data...</p>
+        </div>
+    </div>
+
+    <!-- Submission loading overlay -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-content">
+            <div class="loading-spinner"></div>
+            <p>Sending edited email...</p>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="card">
+            <div class="header">
+                <div class="header-icon">
+                    <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path
+                            d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z" />
+                    </svg>
+                </div>
+                <h1>Edit Email</h1>
+                <p class="subtitle">Review and edit the content below, then submit</p>
+            </div>
+
+            <div class="info-badge" id="statusBadge">
+                <svg viewBox="0 0 24 24">
+                    <path
+                        d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z" />
+                </svg>
+                <span id="statusText">Loading email data...</span>
+            </div>
+
+            <form id="emailForm">
+                <div class="form-group">
+                    <label for="subject">Subject <span>(Email subject line)</span></label>
+                    <input type="text" id="subject" name="subject" placeholder="Email subject will appear here...">
+                </div>
+
+                <div class="form-group">
+                    <label for="body">Body <span>(Email content - edit in place)</span></label>
+                    <textarea id="body" name="body" placeholder="Email body will appear here..."></textarea>
+                </div>
+
+                <button type="submit" class="btn" id="submitBtn">
+                    <svg viewBox="0 0 24 24">
+                        <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+                    </svg>
+                    <span>Submit Edited Email</span>
+                </button>
+
+                <div class="message" id="message">
+                    <svg id="messageIcon" viewBox="0 0 24 24"></svg>
+                    <span id="messageText"></span>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        (function () {
+            'use strict';
+
+            // ============================================================
+            // CONFIGURATION - Set your n8n webhook URL here
+            // ============================================================
+            const WEBHOOK_URL = 'https://your-n8n-instance.com/webhook/your-webhook-id';
+            // ============================================================
+
+            // DOM Elements
+            const form = document.getElementById('emailForm');
+            const subjectInput = document.getElementById('subject');
+            const bodyInput = document.getElementById('body');
+            const submitBtn = document.getElementById('submitBtn');
+            const messageDiv = document.getElementById('message');
+            const messageIcon = document.getElementById('messageIcon');
+            const messageText = document.getElementById('messageText');
+            const loadingOverlay = document.getElementById('loadingOverlay');
+            const initLoading = document.getElementById('initLoading');
+            const statusBadge = document.getElementById('statusBadge');
+            const statusText = document.getElementById('statusText');
+
+            // Icons
+            const icons = {
+                success: '<path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>',
+                error: '<path d="M12 2C6.47 2 2 6.47 2 12s4.47 10 10 10 10-4.47 10-10S17.53 2 12 2zm5 13.59L15.59 17 12 13.41 8.41 17 7 15.59 10.59 12 7 8.41 8.41 7 12 10.59 15.59 7 17 8.41 13.41 12 17 15.59z"/>'
+            };
+
+            // Parse incoming data from URL parameters
+            function parseIncomingData() {
+                const urlParams = new URLSearchParams(window.location.search);
+
+                // Get subject and body from URL parameters
+                let subject = urlParams.get('subject') || '';
+                let body = urlParams.get('body') || '';
+
+                // Decode and populate fields
+                if (subject) subjectInput.value = decodeURIComponent(subject);
+                if (body) bodyInput.value = decodeURIComponent(body);
+
+                // Check hash for JSON data (alternative method)
+                if (window.location.hash && (!subject && !body)) {
+                    try {
+                        const hashData = JSON.parse(decodeURIComponent(window.location.hash.slice(1)));
+                        if (hashData.subject) subjectInput.value = hashData.subject;
+                        if (hashData.body) bodyInput.value = hashData.body;
+                        subject = hashData.subject || '';
+                        body = hashData.body || '';
+                    } catch (e) {
+                        // Hash is not valid JSON, ignore
+                    }
+                }
+
+                // Update status based on data presence
+                if (subject || body) {
+                    updateStatus('Email loaded - ready to edit', 'success');
+                    initLoading.classList.add('hidden');
+                } else {
+                    updateStatus('No data received - enter content manually', 'info');
+                    initLoading.classList.add('hidden');
+                }
+            }
+
+            // Update status badge
+            function updateStatus(text, type = 'info') {
+                statusText.textContent = text;
+                statusBadge.classList.remove('loaded');
+
+                if (type === 'success') {
+                    statusBadge.classList.add('loaded');
+                } else if (type === 'error') {
+                    statusBadge.style.background = 'rgba(239, 68, 68, 0.15)';
+                    statusBadge.style.color = '#ef4444';
+                }
+            }
+
+            // Show message
+            function showMessage(text, isSuccess) {
+                messageDiv.className = 'message ' + (isSuccess ? 'success' : 'error');
+                messageIcon.innerHTML = isSuccess ? icons.success : icons.error;
+                messageText.textContent = text;
+            }
+
+            // Hide message
+            function hideMessage() {
+                messageDiv.className = 'message';
+            }
+
+            // Toggle loading state
+            function setLoading(isLoading) {
+                loadingOverlay.classList.toggle('active', isLoading);
+                submitBtn.disabled = isLoading;
+
+                if (isLoading) {
+                    submitBtn.innerHTML = '<div class="spinner"></div><span>Sending...</span>';
+                } else {
+                    submitBtn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg><span>Submit Edited Email</span>';
+                }
+            }
+
+            // Validate form
+            function validateForm() {
+                const subject = subjectInput.value.trim();
+                const body = bodyInput.value.trim();
+
+                if (!subject && !body) {
+                    showMessage('Please enter at least a subject or body', false);
+                    subjectInput.focus();
+                    return false;
+                }
+
+                if (!WEBHOOK_URL || WEBHOOK_URL === 'https://your-n8n-instance.com/webhook/your-webhook-id') {
+                    showMessage('Webhook URL not configured. Please contact administrator.', false);
+                    return false;
+                }
+
+                return true;
+            }
+
+            // Send data to webhook
+            async function sendToWebhook(data) {
+                const response = await fetch(WEBHOOK_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        subject: data.subject,
+                        body: data.body,
+                        timestamp: new Date().toISOString(),
+                        source: 'email-editor'
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                return response;
+            }
+
+            // Form submit handler
+            async function handleSubmit(e) {
+                e.preventDefault();
+                hideMessage();
+
+                if (!validateForm()) {
+                    return;
+                }
+
+                const data = {
+                    subject: subjectInput.value.trim(),
+                    body: bodyInput.value.trim()
+                };
+
+                setLoading(true);
+                updateStatus('Sending...', 'info');
+
+                try {
+                    await sendToWebhook(data);
+                    showMessage('Email submitted successfully!', true);
+                    updateStatus('Submitted successfully!', 'success');
+                } catch (error) {
+                    console.error('Webhook error:', error);
+                    showMessage(`Failed to send: ${error.message}`, false);
+                    updateStatus('Submission failed', 'error');
+                } finally {
+                    setLoading(false);
+                }
+            }
+
+            // Initialize
+            function init() {
+                parseIncomingData();
+                form.addEventListener('submit', handleSubmit);
+            }
+
+            // Run on DOM ready
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', init);
+            } else {
+                init();
+            }
+
+            // Expose a global function to receive data programmatically
+            window.loadEmailData = function (data) {
+                if (data.subject !== undefined) subjectInput.value = data.subject;
+                if (data.body !== undefined) bodyInput.value = data.body;
+                updateStatus('Email loaded - ready to edit', 'success');
+                initLoading.classList.add('hidden');
+            };
+        })();
+    </script>
+</body>
+
+</html>
