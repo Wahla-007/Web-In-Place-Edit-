@@ -10,7 +10,7 @@ const crypto = require('crypto');
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.RENDER_EXTERNAL_URL || process.env.HOST || `http://localhost:${PORT}`;
 const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || 'https://your-n8n-instance.com/webhook/your-webhook-id';
-const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET || 'your-secret-token-change-this'; // Set in environment!
+const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET || 'your-secret-token-change-this'; // Available but not enforced
 // ============================================================
 
 // ============================================================
@@ -65,6 +65,7 @@ function verifyWebhookToken(req) {
     const token = req.headers['x-webhook-secret'] || req.headers['authorization']?.replace('Bearer ', '');
     return token === WEBHOOK_SECRET;
 }
+
 
 // In-memory storage for email data (keyed by unique ID)
 // In production, you might want to use Redis or a database
@@ -137,7 +138,7 @@ function escapeHtml(text) {
 }
 
 // Generate the form page HTML
-function generateFormPage(id, subject, body, status = 'loaded') {
+function generateFormPage(id, email, subject, body, status = 'loaded') {
     const statusText = status === 'loaded' ? 'Email loaded - ready to edit' :
         status === 'expired' ? 'This link has expired' :
             status === 'notfound' ? 'Email not found' : 'Ready';
@@ -441,7 +442,7 @@ const server = http.createServer(async (req, res) => {
             res.writeHead(401, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({
                 success: false,
-                error: 'Unauthorized: Invalid or missing webhook secret'
+                error: 'Invalid token'
             }));
             return;
         }
