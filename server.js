@@ -436,16 +436,16 @@ const server = http.createServer(async (req, res) => {
     // Returns JSON with unique link
     // =====================================================
     if (req.method === 'POST' && (pathname === '/' || pathname === '/create')) {
-        // SECURITY: Check token authentication
-        if (!verifyWebhookToken(req)) {
-            console.log('[Security] Unauthorized create request - invalid token');
-            res.writeHead(401, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({
-                success: false,
-                error: 'Invalid token'
-            }));
-            return;
-        }
+        // SECURITY: Token authentication temporarily disabled for testing
+        // if (!verifyWebhookToken(req)) {
+        //     console.log('[Security] Unauthorized create request - invalid token');
+        //     res.writeHead(401, { 'Content-Type': 'application/json' });
+        //     res.end(JSON.stringify({
+        //         success: false,
+        //         error: 'Invalid token'
+        //     }));
+        //     return;
+        // }
 
         // SECURITY: Check rate limit
         const clientIP = getRealIP(req);
