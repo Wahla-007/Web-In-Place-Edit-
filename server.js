@@ -10,7 +10,6 @@ const crypto = require('crypto');
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.RENDER_EXTERNAL_URL || process.env.HOST || `http://localhost:${PORT}`;
 const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || 'https://your-n8n-instance.com/webhook/your-webhook-id';
-const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET || 'your-secret-token-change-this'; // Available but not enforced
 // ============================================================
 
 // ============================================================
@@ -58,13 +57,6 @@ setInterval(() => {
     }
 }, 5 * 60 * 1000);
 
-// ============================================================
-// SECURITY: Token Authentication
-// ============================================================
-function verifyWebhookToken(req) {
-    const token = req.headers['x-webhook-secret'] || req.headers['authorization']?.replace('Bearer ', '');
-    return token === WEBHOOK_SECRET;
-}
 
 
 // In-memory storage for email data (keyed by unique ID)
@@ -436,16 +428,6 @@ const server = http.createServer(async (req, res) => {
     // Returns JSON with unique link
     // =====================================================
     if (req.method === 'POST' && (pathname === '/' || pathname === '/create')) {
-        // SECURITY: Token authentication temporarily disabled for testing
-        // if (!verifyWebhookToken(req)) {
-        //     console.log('[Security] Unauthorized create request - invalid token');
-        //     res.writeHead(401, { 'Content-Type': 'application/json' });
-        //     res.end(JSON.stringify({
-        //         success: false,
-        //         error: 'Invalid token'
-        //     }));
-        //     return;
-        // }
 
         // SECURITY: Check rate limit
         const clientIP = getRealIP(req);
