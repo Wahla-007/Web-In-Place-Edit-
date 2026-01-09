@@ -463,6 +463,8 @@ const server = http.createServer(async (req, res) => {
             const data = await parseBody(req);
             const id = generateId();
 
+            console.log('[DEBUG] Received data:', JSON.stringify(data, null, 2));
+
             // Store the email data with timestamp
             emailStore.set(id, {
                 email: data.email || '',  // Contact email (read-only identifier)
@@ -471,6 +473,8 @@ const server = http.createServer(async (req, res) => {
                 createdAt: Date.now(),
                 submitted: false
             });
+
+            console.log('[DEBUG] Stored data for ID:', id, JSON.stringify(emailStore.get(id), null, 2));
 
             // Determine the base URL
             let baseUrl = HOST;
@@ -516,8 +520,13 @@ const server = http.createServer(async (req, res) => {
         const id = pathname.replace('/edit/', '');
         const emailData = emailStore.get(id);
 
+        console.log('[DEBUG] Viewing edit form for ID:', id);
+        console.log('[DEBUG] Email store size:', emailStore.size);
+        console.log('[DEBUG] Retrieved data:', JSON.stringify(emailData, null, 2));
+
         if (!emailData) {
             // Not found or expired
+            console.log('[DEBUG] Data not found for ID:', id);
             res.writeHead(404, { 'Content-Type': 'text/html' });
             res.end(generateFormPage(id, '', '', '', 'notfound'));
             return;
