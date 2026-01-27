@@ -3,13 +3,18 @@ const fs = require('fs');
 const path = require('path');
 const url = require('url');
 const crypto = require('crypto');
+const https = require('https');
 
 // ============================================================
 // CONFIGURATION
 // ============================================================
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.RENDER_EXTERNAL_URL || process.env.HOST || `http://localhost:${PORT}`;
-const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || 'https://your-n8n-instance.com/webhook/your-webhook-id';
+// Original webhook for in-place edit submission
+const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || 'https://herd.coaldev.org/webhook/9115aba7-1438-4f1e-9410-baee846fcefb';
+// New webhook for radio button actions (Approve/Stop)
+const N8N_ACTION_WEBHOOK_URL = process.env.N8N_ACTION_WEBHOOK_URL || 'https://herd.coaldev.org/webhook/57ae0dec-6c8e-472e-bb22-7142c5801293';
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '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';
 // ============================================================
 
 // ============================================================
@@ -127,6 +132,72 @@ function escapeHtml(text) {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#039;');
+}
+
+// OpenAI API call to rewrite email
+async function rewriteEmailWithAI(currentBody, feedback) {
+    return new Promise((resolve, reject) => {
+        if (!OPENAI_API_KEY) {
+            reject(new Error('OpenAI API key not configured'));
+            return;
+        }
+
+        const postData = JSON.stringify({
+            model: 'gpt-3.5-turbo',
+            messages: [
+                {
+                    role: 'system',
+                    content: 'You are a professional email editor. Your task is to rewrite emails based on user feedback while maintaining the original intent and key information. Only return the rewritten email body, nothing else.'
+                },
+                {
+                    role: 'user',
+                    content: `Please rewrite the following email based on this feedback: "${feedback}"\n\nOriginal email:\n${currentBody}`
+                }
+            ],
+            temperature: 0.7,
+            max_tokens: 1500
+        });
+
+        const options = {
+            hostname: 'api.openai.com',
+            port: 443,
+            path: '/v1/chat/completions',
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${OPENAI_API_KEY}`,
+                'Content-Length': Buffer.byteLength(postData)
+            }
+        };
+
+        const req = https.request(options, (res) => {
+            let data = '';
+            res.on('data', (chunk) => {
+                data += chunk;
+            });
+            res.on('end', () => {
+                try {
+                    const response = JSON.parse(data);
+                    if (response.error) {
+                        reject(new Error(response.error.message));
+                    } else if (response.choices && response.choices[0]) {
+                        resolve(response.choices[0].message.content.trim());
+                    } else {
+                        reject(new Error('Invalid response from OpenAI'));
+                    }
+                } catch (e) {
+                    reject(new Error('Failed to parse OpenAI response'));
+                }
+            });
+        });
+
+        req.on('error', (e) => {
+            reject(e);
+        });
+
+        req.write(postData);
+        req.end();
+    });
 }
 
 // Generate the form page HTML
@@ -278,13 +349,235 @@ function generateFormPage(id, email, subject, body, status = 'loaded') {
         .loading-content { text-align: center; color: var(--text-primary); }
         .loading-spinner { width: 50px; height: 50px; border: 3px solid var(--border-color); border-top-color: var(--accent-primary); border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 1rem; }
         .request-id { font-size: 0.7rem; color: var(--text-secondary); text-align: center; margin-top: 1.5rem; opacity: 0.5; }
+        
+        /* Actions Section Styles */
+        .actions-section {
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 1.25rem;
+            margin-bottom: 1.5rem;
+        }
+        .actions-title {
+            color: var(--text-primary);
+            font-weight: 600;
+            font-size: 0.95rem;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .actions-title svg { width: 18px; height: 18px; fill: var(--accent-primary); }
+        .radio-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+        .radio-option {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            cursor: pointer;
+            padding: 0.5rem;
+            border-radius: 8px;
+            transition: background 0.2s ease;
+        }
+        .radio-option:hover { background: var(--bg-tertiary); }
+        .radio-option input[type="radio"] {
+            width: 18px;
+            height: 18px;
+            accent-color: var(--accent-primary);
+            cursor: pointer;
+        }
+        .radio-option label {
+            color: var(--text-primary);
+            font-size: 0.9rem;
+            cursor: pointer;
+            margin-bottom: 0;
+        }
+        .btn-action {
+            width: 100%;
+            background: linear-gradient(135deg, #f59e0b, #d97706);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 0.75rem 1.5rem;
+            font-family: inherit;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            margin-top: 1rem;
+        }
+        .btn-action:hover { transform: translateY(-1px); box-shadow: 0 8px 20px -8px rgba(245, 158, 11, 0.5); }
+        .btn-action:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+        .btn-action svg { width: 18px; height: 18px; fill: currentColor; }
+
+        /* Rewrite with Feedback Styles */
+        .rewrite-section {
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 1.25rem;
+            margin-bottom: 1.5rem;
+        }
+        .rewrite-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 1rem;
+        }
+        .rewrite-title {
+            color: var(--text-primary);
+            font-weight: 600;
+            font-size: 0.95rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .rewrite-title svg { width: 18px; height: 18px; fill: var(--accent-secondary); }
+        .btn-apply {
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 0.6rem 1.25rem;
+            font-family: inherit;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+        .btn-apply:hover { transform: translateY(-1px); box-shadow: 0 8px 20px -8px rgba(16, 185, 129, 0.5); }
+        .btn-apply:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+        .btn-apply svg { width: 16px; height: 16px; fill: currentColor; }
+        .rewrite-textarea {
+            width: 100%;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 0.85rem 1rem;
+            color: var(--text-primary);
+            font-family: inherit;
+            font-size: 0.9rem;
+            min-height: 80px;
+            resize: vertical;
+            transition: all 0.3s ease;
+            outline: none;
+        }
+        .rewrite-textarea:focus {
+            border-color: var(--accent-secondary);
+            box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.2);
+        }
+        .rewrite-textarea::placeholder { color: var(--text-secondary); opacity: 0.7; }
+        .ai-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+            background: linear-gradient(135deg, rgba(139, 92, 246, 0.2), rgba(99, 102, 241, 0.2));
+            color: var(--accent-secondary);
+            font-size: 0.7rem;
+            font-weight: 600;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            margin-left: 0.5rem;
+        }
+        .ai-badge svg { width: 12px; height: 12px; fill: currentColor; }
+
+        /* Two Section Layout */
+        .sections-container {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 1.5rem;
+            margin-top: 1.5rem;
+        }
+        .section-panel {
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+        }
+        .section-panel-header {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 1.25rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .section-panel-icon {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+        .section-panel-icon svg {
+            width: 20px;
+            height: 20px;
+            fill: white;
+        }
+        .section-panel-icon.action-icon {
+            background: linear-gradient(135deg, #f59e0b, #d97706);
+        }
+        .section-panel-title {
+            color: var(--text-primary);
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+        .section-panel-subtitle {
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+            margin-top: 0.25rem;
+        }
+        .section-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        .section-footer {
+            margin-top: auto;
+            padding-top: 1rem;
+        }
+
+
+        /* N8N Footer */
+        .n8n-footer {
+            text-align: center;
+            margin-top: 1.5rem;
+            padding-top: 1rem;
+            border-top: 1px solid var(--border-color);
+        }
+        .n8n-footer span {
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+        }
+        .n8n-logo {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            color: #ff6d5a;
+            font-weight: 600;
+        }
     </style>
 </head>
 <body>
     <div class="loading-overlay" id="loadingOverlay">
         <div class="loading-content">
             <div class="loading-spinner"></div>
-            <p>Sending edited email...</p>
+            <p id="loadingText">Processing...</p>
         </div>
     </div>
     <div class="container">
@@ -303,40 +596,129 @@ function generateFormPage(id, email, subject, body, status = 'loaded') {
             <form id="emailForm">
                 <input type="hidden" id="requestId" value="${escapeHtml(id)}">
                 <input type="hidden" id="contactEmail" value="${escapeHtml(email)}">
+                
+                <!-- Contact Email (shown at top) -->
                 <div class="form-group">
                     <label for="emailDisplay">Contact Email <span>(Read-only identifier)</span></label>
                     <input type="text" id="emailDisplay" name="emailDisplay" value="${escapeHtml(email)}" disabled style="opacity: 0.7; cursor: not-allowed;">
                 </div>
-                <div class="form-group">
-                    <label for="subject">Subject <span>(Email subject line)</span></label>
-                    <input type="text" id="subject" name="subject" value="${escapeHtml(subject)}" ${status !== 'loaded' ? 'disabled' : ''}>
+
+                <!-- Two Sections Container -->
+                <div class="sections-container">
+                    
+                    <!-- SECTION 1: Email Editing -->
+                    <div class="section-panel">
+                        <div class="section-panel-header">
+                            <div class="section-panel-icon">
+                                <svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
+                            </div>
+                            <div>
+                                <div class="section-panel-title">Edit Email</div>
+                                <div class="section-panel-subtitle">Modify subject, body & submit changes</div>
+                            </div>
+                        </div>
+                        <div class="section-content">
+                            <div class="form-group">
+                                <label for="subject">Subject <span>(Email subject line)</span></label>
+                                <input type="text" id="subject" name="subject" value="${escapeHtml(subject)}" ${status !== 'loaded' ? 'disabled' : ''}>
+                            </div>
+                            <div class="form-group">
+                                <label for="body">Body <span>(Email content - edit in place)</span></label>
+                                <textarea id="body" name="body" style="min-height: 180px;" ${status !== 'loaded' ? 'disabled' : ''}>${escapeHtml(body)}</textarea>
+                            </div>
+                            
+                            <!-- Re-write with Feedback -->
+                            <div class="rewrite-section" style="margin-bottom: 0;">
+                                <div class="rewrite-header">
+                                    <div class="rewrite-title">
+                                        <svg viewBox="0 0 24 24"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+                                        Re-write with AI
+                                        <span class="ai-badge">
+                                            <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
+                                            AI Powered
+                                        </span>
+                                    </div>
+                                    <button type="button" class="btn-apply" id="applyBtn" ${status !== 'loaded' ? 'disabled' : ''}>
+                                        <svg viewBox="0 0 24 24"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+                                        Apply
+                                    </button>
+                                </div>
+                                <textarea class="rewrite-textarea" id="rewriteFeedback" placeholder="Enter instructions to rewrite... (e.g., 'Make it more formal')" ${status !== 'loaded' ? 'disabled' : ''}></textarea>
+                            </div>
+                        </div>
+                        <div class="section-footer">
+                            <button type="submit" class="btn" id="submitBtn" ${status !== 'loaded' ? 'disabled' : ''}>
+                                <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+                                <span>Submit Edit</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- SECTION 2: Quick Actions -->
+                    <div class="section-panel">
+                        <div class="section-panel-header">
+                            <div class="section-panel-icon action-icon">
+                                <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
+                            </div>
+                            <div>
+                                <div class="section-panel-title">Quick Actions</div>
+                                <div class="section-panel-subtitle">Approve or stop the email workflow</div>
+                            </div>
+                        </div>
+                        <div class="section-content">
+                            <div class="radio-group" style="gap: 1rem;">
+                                <div class="radio-option" style="padding: 1rem; background: var(--bg-secondary); border-radius: 12px;">
+                                    <input type="radio" id="actionStop" name="action" value="stop" ${status !== 'loaded' ? 'disabled' : ''}>
+                                    <label for="actionStop" style="flex: 1;">
+                                        <div style="font-weight: 600; color: var(--error);">Stop</div>
+                                        <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 0.25rem;">Cancel and stop the email workflow</div>
+                                    </label>
+                                </div>
+                                <div class="radio-option" style="padding: 1rem; background: var(--bg-secondary); border-radius: 12px;">
+                                    <input type="radio" id="actionApprove" name="action" value="approve" ${status !== 'loaded' ? 'disabled' : ''}>
+                                    <label for="actionApprove" style="flex: 1;">
+                                        <div style="font-weight: 600; color: var(--success);">Approve/Send</div>
+                                        <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 0.25rem;">Approve and send the email as-is</div>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="section-footer">
+                            <button type="button" class="btn-action" id="actionBtn" ${status !== 'loaded' ? 'disabled' : ''}>
+                                <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+                                <span>Submit Action</span>
+                            </button>
+                        </div>
+                    </div>
                 </div>
-                <div class="form-group">
-                    <label for="body">Body <span>(Email content - edit in place)</span></label>
-                    <textarea id="body" name="body" ${status !== 'loaded' ? 'disabled' : ''}>${escapeHtml(body)}</textarea>
-                </div>
-                <button type="submit" class="btn" id="submitBtn" ${status !== 'loaded' ? 'disabled' : ''}>
-                    <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
-                    <span>Send</span>
-                </button>
+
                 <div class="message" id="message">
                     <svg id="messageIcon" viewBox="0 0 24 24"></svg>
                     <span id="messageText"></span>
                 </div>
             </form>
+            <div class="n8n-footer">
+                <span>Form automated with <span class="n8n-logo">∞ n8n</span></span>
+            </div>
             <div class="request-id">Request ID: ${escapeHtml(id)}</div>
         </div>
     </div>
     <script>
         (function() {
             const WEBHOOK_URL = '${N8N_WEBHOOK_URL}';
+            const ACTION_WEBHOOK_URL = '${N8N_ACTION_WEBHOOK_URL}';
             const form = document.getElementById('emailForm');
             const submitBtn = document.getElementById('submitBtn');
+            const actionBtn = document.getElementById('actionBtn');
+            const applyBtn = document.getElementById('applyBtn');
             const messageDiv = document.getElementById('message');
             const messageIcon = document.getElementById('messageIcon');
             const messageText = document.getElementById('messageText');
             const loadingOverlay = document.getElementById('loadingOverlay');
+            const loadingTextEl = document.getElementById('loadingText');
             const requestId = document.getElementById('requestId').value;
+            const bodyTextarea = document.getElementById('body');
+            const rewriteFeedback = document.getElementById('rewriteFeedback');
 
             const icons = {
                 success: '<path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>',
@@ -349,16 +731,102 @@ function generateFormPage(id, email, subject, body, status = 'loaded') {
                 messageText.textContent = text;
             }
 
-            function setLoading(isLoading) {
+            function setLoading(isLoading, text = 'Processing...') {
                 loadingOverlay.classList.toggle('active', isLoading);
-                submitBtn.disabled = isLoading;
-                if (isLoading) {
-                    submitBtn.innerHTML = '<div class="spinner"></div><span>Sending...</span>';
-                } else {
-                    submitBtn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg><span>Send</span>';
-                }
+                loadingTextEl.textContent = text;
             }
 
+            // Apply AI Rewrite
+            applyBtn.addEventListener('click', async function() {
+                const feedback = rewriteFeedback.value.trim();
+                const currentBody = bodyTextarea.value.trim();
+
+                if (!feedback) {
+                    showMessage('Please enter feedback/instructions for the rewrite', false);
+                    return;
+                }
+
+                if (!currentBody) {
+                    showMessage('No email content to rewrite', false);
+                    return;
+                }
+
+                setLoading(true, 'AI is rewriting your email...');
+                applyBtn.disabled = true;
+
+                try {
+                    const response = await fetch('/api/rewrite', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            currentBody: currentBody,
+                            feedback: feedback
+                        })
+                    });
+
+                    const result = await response.json();
+
+                    if (!response.ok) {
+                        throw new Error(result.error || 'Failed to rewrite email');
+                    }
+
+                    // Update the body textarea with the rewritten content
+                    bodyTextarea.value = result.rewrittenBody;
+                    rewriteFeedback.value = ''; // Clear feedback after successful rewrite
+                    showMessage('Email rewritten successfully!', true);
+                } catch (error) {
+                    showMessage('Rewrite failed: ' + error.message, false);
+                } finally {
+                    setLoading(false);
+                    applyBtn.disabled = false;
+                }
+            });
+
+            // Submit Action (Stop/Approve) - uses ACTION_WEBHOOK_URL
+            actionBtn.addEventListener('click', async function() {
+                const selectedAction = document.querySelector('input[name="action"]:checked');
+                
+                if (!selectedAction) {
+                    showMessage('Please select an action (Stop or Approve/Send)', false);
+                    return;
+                }
+
+                const action = selectedAction.value;
+                const subject = document.getElementById('subject').value.trim();
+                const body = document.getElementById('body').value.trim();
+                const contactEmail = document.getElementById('contactEmail').value;
+
+                setLoading(true, action === 'approve' ? 'Approving and sending...' : 'Stopping...');
+                actionBtn.disabled = true;
+
+                try {
+                    const response = await fetch('/webhook/action', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            requestId: requestId,
+                            email: contactEmail,
+                            subject: subject,
+                            body: body,
+                            action: action,
+                            timestamp: new Date().toISOString(),
+                            source: 'email-editor-action'
+                        })
+                    });
+
+                    if (!response.ok) throw new Error('HTTP ' + response.status);
+                    showMessage(action === 'approve' ? 'Email approved and sent!' : 'Process stopped successfully!', true);
+                    actionBtn.disabled = true;
+                    submitBtn.disabled = true;
+                } catch (error) {
+                    showMessage('Action failed: ' + error.message, false);
+                    actionBtn.disabled = false;
+                } finally {
+                    setLoading(false);
+                }
+            });
+
+            // Form Submit (In-Place Edit) - uses original WEBHOOK_URL
             form.addEventListener('submit', async function(e) {
                 e.preventDefault();
                 messageDiv.className = 'message';
@@ -372,7 +840,9 @@ function generateFormPage(id, email, subject, body, status = 'loaded') {
                     return;
                 }
 
-                setLoading(true);
+                setLoading(true, 'Sending edited email...');
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = '<div class="spinner"></div><span>Sending...</span>';
 
                 try {
                     // Send to our server's webhook proxy endpoint
@@ -385,6 +855,7 @@ function generateFormPage(id, email, subject, body, status = 'loaded') {
                             email: contactEmail,
                             subject: subject,
                             body: body,
+                            action: 'edit',
                             timestamp: new Date().toISOString(),
                             source: 'email-editor'
                         })
@@ -397,6 +868,7 @@ function generateFormPage(id, email, subject, body, status = 'loaded') {
                     showMessage('Failed to send: ' + error.message, false);
                 } finally {
                     setLoading(false);
+                    submitBtn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg><span>Submit</span>';
                 }
             });
         })();
@@ -420,6 +892,52 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'OPTIONS') {
         res.writeHead(200);
         res.end();
+        return;
+    }
+
+    // =====================================================
+    // POST /api/rewrite - AI Rewrite endpoint
+    // =====================================================
+    if (req.method === 'POST' && pathname === '/api/rewrite') {
+        try {
+            const data = await parseBody(req);
+            const { currentBody, feedback } = data;
+
+            if (!currentBody || !feedback) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({
+                    success: false,
+                    error: 'Missing currentBody or feedback'
+                }));
+                return;
+            }
+
+            if (!OPENAI_API_KEY) {
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({
+                    success: false,
+                    error: 'OpenAI API key not configured. Set OPENAI_API_KEY environment variable.'
+                }));
+                return;
+            }
+
+            console.log('[AI Rewrite] Processing request...');
+            const rewrittenBody = await rewriteEmailWithAI(currentBody, feedback);
+            console.log('[AI Rewrite] Successfully rewritten');
+
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+                success: true,
+                rewrittenBody: rewrittenBody
+            }));
+        } catch (error) {
+            console.error('[AI Rewrite Error]', error);
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+                success: false,
+                error: error.message || 'Failed to rewrite email'
+            }));
+        }
         return;
     }
 
@@ -586,9 +1104,10 @@ const server = http.createServer(async (req, res) => {
             if (emailData) {
                 emailData.subject = data.subject || emailData.subject;
                 emailData.body = data.body || emailData.body;
+                emailData.action = data.action || 'edit';
                 emailData.submitted = true;
                 emailData.submittedAt = Date.now();
-                console.log(`[Submitted] Request: ${requestId} | Email: ${emailData.email || data.email || 'N/A'}`);
+                console.log(`[Submitted] Request: ${requestId} | Email: ${emailData.email || data.email || 'N/A'} | Action: ${data.action || 'edit'}`);
             }
 
             // Ensure email is always included in the webhook payload
@@ -600,8 +1119,6 @@ const server = http.createServer(async (req, res) => {
             console.log('[Webhook Payload]', JSON.stringify(webhookPayload, null, 2));
 
             // Forward to n8n webhook
-            const https = require('https');
-            const urlModule = require('url');
             const webhookUrl = new URL(N8N_WEBHOOK_URL);
 
             const postData = JSON.stringify(webhookPayload);
@@ -650,6 +1167,81 @@ const server = http.createServer(async (req, res) => {
     }
 
     // =====================================================
+    // POST /webhook/action - Proxy to action webhook (Stop/Approve)
+    // =====================================================
+    if (req.method === 'POST' && pathname === '/webhook/action') {
+        try {
+            const data = await parseBody(req);
+            const requestId = data.requestId;
+
+            // Mark as submitted in our store
+            const emailData = emailStore.get(requestId);
+            if (emailData) {
+                emailData.subject = data.subject || emailData.subject;
+                emailData.body = data.body || emailData.body;
+                emailData.action = data.action || 'approve';
+                emailData.submitted = true;
+                emailData.submittedAt = Date.now();
+                console.log(`[Action Submitted] Request: ${requestId} | Email: ${emailData.email || data.email || 'N/A'} | Action: ${data.action}`);
+            }
+
+            // Ensure email is always included in the webhook payload
+            const webhookPayload = {
+                ...data,
+                email: data.email || (emailData ? emailData.email : ''),
+            };
+
+            console.log('[Action Webhook Payload]', JSON.stringify(webhookPayload, null, 2));
+
+            // Forward to action webhook (Stop/Approve)
+            const webhookUrl = new URL(N8N_ACTION_WEBHOOK_URL);
+
+            const postData = JSON.stringify(webhookPayload);
+
+            const options = {
+                hostname: webhookUrl.hostname,
+                port: webhookUrl.port || 443,
+                path: webhookUrl.pathname + webhookUrl.search,
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Content-Length': Buffer.byteLength(postData)
+                }
+            };
+
+            const proxyReq = https.request(options, (proxyRes) => {
+                let responseBody = '';
+                proxyRes.on('data', (chunk) => {
+                    responseBody += chunk;
+                });
+                proxyRes.on('end', () => {
+                    console.log(`[Action Webhook Forward] Status: ${proxyRes.statusCode}`);
+                    res.writeHead(proxyRes.statusCode, { 'Content-Type': 'application/json' });
+                    res.end(responseBody || JSON.stringify({ success: true }));
+                });
+            });
+
+            proxyReq.on('error', (error) => {
+                console.error('[Action Webhook Error]', error);
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({
+                    success: false,
+                    error: 'Failed to forward to action webhook',
+                    details: error.message
+                }));
+            });
+
+            proxyReq.write(postData);
+            proxyReq.end();
+        } catch (error) {
+            console.error('Error:', error);
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: false, error: 'Server error' }));
+        }
+        return;
+    }
+
+    // =====================================================
     // GET / - Health check / info
     // =====================================================
     if (req.method === 'GET' && pathname === '/') {
@@ -657,10 +1249,14 @@ const server = http.createServer(async (req, res) => {
         res.end(JSON.stringify({
             service: 'Email Editor - Human in the Loop',
             status: 'running',
+            features: {
+                aiRewrite: OPENAI_API_KEY ? 'enabled' : 'disabled (set OPENAI_API_KEY)'
+            },
             usage: {
                 createRequest: 'POST / with { "subject": "...", "body": "..." }',
                 editForm: 'GET /edit/:requestId',
-                checkStatus: 'GET /status/:requestId'
+                checkStatus: 'GET /status/:requestId',
+                aiRewrite: 'POST /api/rewrite with { "currentBody": "...", "feedback": "..." }'
             },
             activeRequests: emailStore.size
         }));
@@ -675,7 +1271,7 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, () => {
     console.log('');
     console.log('╔════════════════════════════════════════════════════════════════╗');
-    console.log('║           📧 Email Editor Server (Instance-based)              ║');
+    console.log('║           📧 Email Editor Server (AI Enhanced)                 ║');
     console.log('╠════════════════════════════════════════════════════════════════╣');
     console.log(`║  Server running at: http://localhost:${PORT}                      ║`);
     console.log('╠════════════════════════════════════════════════════════════════╣');
@@ -684,7 +1280,10 @@ server.listen(PORT, () => {
     console.log('║  POST /           → Create new request, get unique link       ║');
     console.log('║  GET  /edit/:id   → Show form for specific request            ║');
     console.log('║  GET  /status/:id → Check if request was submitted            ║');
+    console.log('║  POST /api/rewrite → AI-powered email rewriting               ║');
     console.log('║                                                                ║');
+    console.log('╠════════════════════════════════════════════════════════════════╣');
+    console.log('║  AI REWRITE: ' + (OPENAI_API_KEY ? '✅ Enabled' : '❌ Disabled (set OPENAI_API_KEY)') + '                         ║');
     console.log('╠════════════════════════════════════════════════════════════════╣');
     console.log('║  EXAMPLE:                                                      ║');
     console.log('║                                                                ║');
