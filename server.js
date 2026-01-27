@@ -10,7 +10,7 @@ const https = require('https');
 // ============================================================
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.RENDER_EXTERNAL_URL || process.env.HOST || `http://localhost:${PORT}`;
-// Original webhook for in-place edit submission
+
 const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || 'https://herd.coaldev.org/webhook/9115aba7-1438-4f1e-9410-baee846fcefb';
 // New webhook for radio button actions (Approve/Stop)
 const N8N_ACTION_WEBHOOK_URL = process.env.N8N_ACTION_WEBHOOK_URL || 'https://herd.coaldev.org/webhook/57ae0dec-6c8e-472e-bb22-7142c5801293';
