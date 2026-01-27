@@ -14,7 +14,7 @@ const HOST = process.env.RENDER_EXTERNAL_URL || process.env.HOST || `http://loca
 const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || 'https://herd.coaldev.org/webhook/9115aba7-1438-4f1e-9410-baee846fcefb';
 // New webhook for radio button actions (Approve/Stop)
 const N8N_ACTION_WEBHOOK_URL = process.env.N8N_ACTION_WEBHOOK_URL || 'https://herd.coaldev.org/webhook/57ae0dec-6c8e-472e-bb22-7142c5801293';
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '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';
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'AIzaSyCM59U5wWLmhyib_Zpn_zHvKE7V4MY8T94';
 // ============================================================
 
 // ============================================================
@@ -134,65 +134,79 @@ function escapeHtml(text) {
         .replace(/'/g, '&#039;');
 }
 
-// OpenAI API call to rewrite email
+// Gemini API call to rewrite email
 async function rewriteEmailWithAI(currentBody, feedback) {
     return new Promise((resolve, reject) => {
-        if (!OPENAI_API_KEY) {
-            reject(new Error('OpenAI API key not configured'));
+        if (!GEMINI_API_KEY) {
+            reject(new Error('AI rewriting is currently unavailable: Gemini API key is not configured.'));
             return;
         }
 
         const postData = JSON.stringify({
-            model: 'gpt-3.5-turbo',
-            messages: [
-                {
-                    role: 'system',
-                    content: 'You are a professional email editor. Your task is to rewrite emails based on user feedback while maintaining the original intent and key information. Only return the rewritten email body, nothing else.'
-                },
-                {
-                    role: 'user',
-                    content: `Please rewrite the following email based on this feedback: "${feedback}"\n\nOriginal email:\n${currentBody}`
-                }
-            ],
-            temperature: 0.7,
-            max_tokens: 1500
+            contents: [{
+                parts: [{
+                    text: `You are a professional email editor. Your task is to rewrite emails based on user feedback while maintaining the original intent and key information. Only return the rewritten email body, nothing else.\n\nPlease rewrite the following email based on this feedback: "${feedback}"\n\nOriginal email:\n${currentBody}`
+                }]
+            }]
         });
 
+        console.log('[AI Debug] Sending request to Gemini...');
+
         const options = {
-            hostname: 'api.openai.com',
+            hostname: 'generativelanguage.googleapis.com',
             port: 443,
-            path: '/v1/chat/completions',
+            path: `/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${OPENAI_API_KEY}`,
                 'Content-Length': Buffer.byteLength(postData)
             }
         };
 
         const req = https.request(options, (res) => {
             let data = '';
+            console.log(`[AI Debug] Gemini Response Status: ${res.statusCode}`);
+
             res.on('data', (chunk) => {
                 data += chunk;
             });
+
             res.on('end', () => {
                 try {
                     const response = JSON.parse(data);
+
+                    if (res.statusCode !== 200) {
+                        const errorMessage = response.error ? response.error.message : 'Unknown API error';
+
+                        if (res.statusCode === 401 || res.statusCode === 403) {
+                            reject(new Error(`AI Error (Authentication): The provided Gemini API key is invalid or lacks necessary permissions. Please check your configuration.`));
+                        } else if (res.statusCode === 429) {
+                            reject(new Error('AI Error (Rate Limit): Too many requests. Please wait a moment before trying again.'));
+                        } else {
+                            reject(new Error(`AI Error (${res.statusCode}): ${errorMessage}`));
+                        }
+                        return;
+                    }
+
                     if (response.error) {
-                        reject(new Error(response.error.message));
-                    } else if (response.choices && response.choices[0]) {
-                        resolve(response.choices[0].message.content.trim());
+                        console.error('[AI Debug] Gemini Error JSON:', response.error.message);
+                        reject(new Error(`AI Error: ${response.error.message}`));
+                    } else if (response.candidates && response.candidates[0] && response.candidates[0].content && response.candidates[0].content.parts[0]) {
+                        resolve(response.candidates[0].content.parts[0].text.trim());
                     } else {
-                        reject(new Error('Invalid response from OpenAI'));
+                        console.error('[AI Debug] Invalid Gemini response structure:', data);
+                        reject(new Error('AI Error: Received an unexpected response format from Gemini.'));
                     }
                 } catch (e) {
-                    reject(new Error('Failed to parse OpenAI response'));
+                    console.error('[AI Debug] Parse Error:', e.message, 'Data:', data);
+                    reject(new Error('AI Error: Failed to process the response from Gemini.'));
                 }
             });
         });
 
         req.on('error', (e) => {
-            reject(e);
+            console.error('[AI Debug] Network Error:', e.message);
+            reject(new Error(`AI Error (Network): Unable to connect to Gemini service. Please check your internet connection. (${e.message})`));
         });
 
         req.write(postData);
@@ -912,11 +926,11 @@ const server = http.createServer(async (req, res) => {
                 return;
             }
 
-            if (!OPENAI_API_KEY) {
+            if (!GEMINI_API_KEY) {
                 res.writeHead(500, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({
                     success: false,
-                    error: 'OpenAI API key not configured. Set OPENAI_API_KEY environment variable.'
+                    error: 'Gemini API key not configured. Set GEMINI_API_KEY environment variable.'
                 }));
                 return;
             }
@@ -1255,7 +1269,7 @@ const server = http.createServer(async (req, res) => {
             service: 'Email Editor - Human in the Loop',
             status: 'running',
             features: {
-                aiRewrite: OPENAI_API_KEY ? 'enabled' : 'disabled (set OPENAI_API_KEY)'
+                aiRewrite: GEMINI_API_KEY ? 'enabled' : 'disabled (set GEMINI_API_KEY)'
             },
             usage: {
                 createRequest: 'POST / with { "subject": "...", "body": "..." }',
@@ -1288,7 +1302,7 @@ server.listen(PORT, () => {
     console.log('║  POST /api/rewrite → AI-powered email rewriting               ║');
     console.log('║                                                                ║');
     console.log('╠════════════════════════════════════════════════════════════════╣');
-    console.log('║  AI REWRITE: ' + (OPENAI_API_KEY ? '✅ Enabled' : '❌ Disabled (set OPENAI_API_KEY)') + '                         ║');
+    console.log('║  AI REWRITE: ' + (GEMINI_API_KEY ? '✅ Enabled' : '❌ Disabled (set GEMINI_API_KEY)') + '                         ║');
     console.log('╠════════════════════════════════════════════════════════════════╣');
     console.log('║  EXAMPLE:                                                      ║');
     console.log('║                                                                ║');
