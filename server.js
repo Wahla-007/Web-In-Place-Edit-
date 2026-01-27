@@ -1196,6 +1196,11 @@ const server = http.createServer(async (req, res) => {
             // Forward to action webhook (Stop/Approve)
             const webhookUrl = new URL(N8N_ACTION_WEBHOOK_URL);
 
+            // Add parameters as query string for n8n convenience
+            webhookUrl.searchParams.append('action', data.action || 'approve');
+            webhookUrl.searchParams.append('requestId', requestId || '');
+            webhookUrl.searchParams.append('email', webhookPayload.email || '');
+
             const postData = JSON.stringify(webhookPayload);
 
             const options = {
