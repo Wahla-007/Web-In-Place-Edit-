@@ -155,7 +155,7 @@ async function rewriteEmailWithAI(currentBody, feedback) {
         const options = {
             hostname: 'generativelanguage.googleapis.com',
             port: 443,
-            path: `/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+            path: `/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -1261,24 +1261,11 @@ const server = http.createServer(async (req, res) => {
     }
 
     // =====================================================
-    // GET / - Health check / info
+    // GET / - Return a blank form
     // =====================================================
     if (req.method === 'GET' && pathname === '/') {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({
-            service: 'Email Editor - Human in the Loop',
-            status: 'running',
-            features: {
-                aiRewrite: GEMINI_API_KEY ? 'enabled' : 'disabled (set GEMINI_API_KEY)'
-            },
-            usage: {
-                createRequest: 'POST / with { "subject": "...", "body": "..." }',
-                editForm: 'GET /edit/:requestId',
-                checkStatus: 'GET /status/:requestId',
-                aiRewrite: 'POST /api/rewrite with { "currentBody": "...", "feedback": "..." }'
-            },
-            activeRequests: emailStore.size
-        }));
+        res.writeHead(200, { 'Content-Type': 'text/html' });
+        res.end(generateFormPage('new', '', '', '', 'loaded'));
         return;
     }
 
