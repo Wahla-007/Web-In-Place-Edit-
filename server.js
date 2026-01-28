@@ -5,16 +5,19 @@ const url = require('url');
 const crypto = require('crypto');
 const https = require('https');
 
+// Load environment variables from .env file
+require('dotenv').config();
+
 // ============================================================
 // CONFIGURATION
 // ============================================================
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.RENDER_EXTERNAL_URL || process.env.HOST || `http://localhost:${PORT}`;
 
-const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || 'https://herd.coaldev.org/webhook/9115aba7-1438-4f1e-9410-baee846fcefb';
+const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || '';
 // New webhook for radio button actions (Approve/Stop)
-const N8N_ACTION_WEBHOOK_URL = process.env.N8N_ACTION_WEBHOOK_URL || 'https://herd.coaldev.org/webhook/57ae0dec-6c8e-472e-bb22-7142c5801293';
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'AIzaSyDxwT7pPxu2ZiWCPKFRpsZmwtbg9TGuj6Y';
+const N8N_ACTION_WEBHOOK_URL = process.env.N8N_ACTION_WEBHOOK_URL || '';
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 // ============================================================
 
 // ============================================================
