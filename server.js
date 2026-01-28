@@ -14,7 +14,7 @@ const HOST = process.env.RENDER_EXTERNAL_URL || process.env.HOST || `http://loca
 const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || 'https://herd.coaldev.org/webhook/9115aba7-1438-4f1e-9410-baee846fcefb';
 // New webhook for radio button actions (Approve/Stop)
 const N8N_ACTION_WEBHOOK_URL = process.env.N8N_ACTION_WEBHOOK_URL || 'https://herd.coaldev.org/webhook/57ae0dec-6c8e-472e-bb22-7142c5801293';
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'AIzaSyCM59U5wWLmhyib_Zpn_zHvKE7V4MY8T94';
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'AIzaSyDxwT7pPxu2ZiWCPKFRpsZmwtbg9TGuj6Y';
 // ============================================================
 
 // ============================================================
@@ -155,7 +155,7 @@ async function rewriteEmailWithAI(currentBody, feedback) {
         const options = {
             hostname: 'generativelanguage.googleapis.com',
             port: 443,
-            path: `/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+            path: `/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -177,11 +177,13 @@ async function rewriteEmailWithAI(currentBody, feedback) {
 
                     if (res.statusCode !== 200) {
                         const errorMessage = response.error ? response.error.message : 'Unknown API error';
+                        console.error(`[AI Debug] Gemini API Error - Status: ${res.statusCode}, Message: ${errorMessage}`);
+                        console.error(`[AI Debug] Raw Response:`, data);
 
                         if (res.statusCode === 401 || res.statusCode === 403) {
                             reject(new Error(`AI Error (Authentication): The provided Gemini API key is invalid or lacks necessary permissions. Please check your configuration.`));
                         } else if (res.statusCode === 429) {
-                            reject(new Error('AI Error (Rate Limit): Too many requests. Please wait a moment before trying again.'));
+                            reject(new Error(`AI Error (Rate Limit): ${errorMessage}`));
                         } else {
                             reject(new Error(`AI Error (${res.statusCode}): ${errorMessage}`));
                         }
