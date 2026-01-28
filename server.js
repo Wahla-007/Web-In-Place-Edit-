@@ -17,7 +17,16 @@ const HOST = process.env.RENDER_EXTERNAL_URL || process.env.HOST || `http://loca
 const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || '';
 // New webhook for radio button actions (Approve/Stop)
 const N8N_ACTION_WEBHOOK_URL = process.env.N8N_ACTION_WEBHOOK_URL || '';
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+
+// Gemini API Keys with fallback support
+const GEMINI_API_KEYS = [
+    process.env.GEMINI_API_KEY || '',
+    process.env.GEMINI_API_KEY_2 || '',
+    process.env.GEMINI_API_KEY_3 || ''
+].filter(key => key); // Remove empty keys
+
+// For backwards compatibility
+const GEMINI_API_KEY = GEMINI_API_KEYS[0] || '';
 // ============================================================
 
 // ============================================================
@@ -137,14 +146,20 @@ function escapeHtml(text) {
         .replace(/'/g, '&#039;');
 }
 
-// Gemini API call to rewrite email
-async function rewriteEmailWithAI(currentBody, feedback) {
-    return new Promise((resolve, reject) => {
-        if (!GEMINI_API_KEY) {
-            reject(new Error('AI rewriting is currently unavailable: Gemini API key is not configured.'));
-            return;
-        }
+// Gemini API call to rewrite email (with fallback support)
+async function rewriteEmailWithAI(currentBody, feedback, keyIndex = 0) {
+    if (GEMINI_API_KEYS.length === 0) {
+        throw new Error('AI rewriting is currently unavailable: No Gemini API keys configured.');
+    }
 
+    if (keyIndex >= GEMINI_API_KEYS.length) {
+        throw new Error('AI Error: All API keys exhausted. Please try again later.');
+    }
+
+    const apiKey = GEMINI_API_KEYS[keyIndex];
+    console.log(`[AI Debug] Using API key ${keyIndex + 1} of ${GEMINI_API_KEYS.length}`);
+
+    return new Promise((resolve, reject) => {
         const postData = JSON.stringify({
             contents: [{
                 parts: [{
@@ -158,7 +173,7 @@ async function rewriteEmailWithAI(currentBody, feedback) {
         const options = {
             hostname: 'generativelanguage.googleapis.com',
             port: 443,
-            path: `/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+            path: `/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -174,22 +189,27 @@ async function rewriteEmailWithAI(currentBody, feedback) {
                 data += chunk;
             });
 
-            res.on('end', () => {
+            res.on('end', async () => {
                 try {
                     const response = JSON.parse(data);
 
                     if (res.statusCode !== 200) {
                         const errorMessage = response.error ? response.error.message : 'Unknown API error';
                         console.error(`[AI Debug] Gemini API Error - Status: ${res.statusCode}, Message: ${errorMessage}`);
-                        console.error(`[AI Debug] Raw Response:`, data);
 
-                        if (res.statusCode === 401 || res.statusCode === 403) {
-                            reject(new Error(`AI Error (Authentication): The provided Gemini API key is invalid or lacks necessary permissions. Please check your configuration.`));
-                        } else if (res.statusCode === 429) {
-                            reject(new Error(`AI Error (Rate Limit): ${errorMessage}`));
-                        } else {
-                            reject(new Error(`AI Error (${res.statusCode}): ${errorMessage}`));
+                        // Try fallback key for rate limit or auth errors
+                        if (res.statusCode === 429 || res.statusCode === 401 || res.statusCode === 403) {
+                            console.log(`[AI Debug] Key ${keyIndex + 1} failed, trying fallback...`);
+                            try {
+                                const result = await rewriteEmailWithAI(currentBody, feedback, keyIndex + 1);
+                                resolve(result);
+                            } catch (fallbackError) {
+                                reject(fallbackError);
+                            }
+                            return;
                         }
+
+                        reject(new Error(`AI Error (${res.statusCode}): ${errorMessage}`));
                         return;
                     }
 
