@@ -81,7 +81,7 @@ setInterval(() => {
 const emailStore = new Map();
 
 // Auto-cleanup old entries after 24 hours
-const EXPIRY_TIME = 24 * 60 * 60 * 1000; // 24 hours in ms
+const EXPIRY_TIME = 30 * 24 * 60 * 60 * 1000; // 24 hours in ms
 
 function cleanupExpired() {
     const now = Date.now();
@@ -255,17 +255,17 @@ function generateFormPage(id, email, subject, body, status = 'loaded') {
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         :root {
-            --bg-primary: #0f0f1a;
-            --bg-secondary: #1a1a2e;
-            --bg-tertiary: #252542;
-            --accent-primary: #6366f1;
-            --accent-secondary: #8b5cf6;
-            --accent-glow: rgba(99, 102, 241, 0.3);
-            --text-primary: #f1f5f9;
-            --text-secondary: #94a3b8;
-            --success: #10b981;
-            --error: #ef4444;
-            --border-color: #334155;
+            --bg-primary: #F8F9FA;
+            --bg-secondary: #FFFFFF;
+            --bg-tertiary: #F3F4F6;
+            --accent-primary: #2563EB;
+            --accent-secondary: #3B82F6;
+            --accent-warning: #F59E0B;
+            --text-primary: #1F2937;
+            --text-secondary: #6B7280;
+            --success: #10B981;
+            --error: #EF4444;
+            --border-color: #C5CBD3;
         }
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
         body {
@@ -276,126 +276,115 @@ function generateFormPage(id, email, subject, body, status = 'loaded') {
             align-items: center;
             justify-content: center;
             padding: 2rem;
-            position: relative;
         }
-        body::before {
-            content: '';
-            position: fixed;
-            top: -50%; left: -50%;
-            width: 200%; height: 200%;
-            background: radial-gradient(ellipse at center, var(--accent-glow) 0%, transparent 50%);
-            animation: pulse 8s ease-in-out infinite;
-            pointer-events: none;
-        }
-        @keyframes pulse {
-            0%, 100% { opacity: 0.3; transform: scale(1); }
-            50% { opacity: 0.5; transform: scale(1.1); }
-        }
-        .container { width: 100%; max-width: 700px; position: relative; z-index: 1; }
+        .container { width: 100%; max-width: 700px; }
         .card {
-            background: linear-gradient(145deg, var(--bg-secondary), var(--bg-tertiary));
-            border: 1px solid var(--border-color);
-            border-radius: 20px;
-            padding: 2.5rem;
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 60px -15px var(--accent-glow);
-        }
-        .header { text-align: center; margin-bottom: 2rem; }
-        .header-icon {
-            width: 60px; height: 60px;
-            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
-            border-radius: 16px;
-            display: flex; align-items: center; justify-content: center;
-            margin: 0 auto 1rem;
-            box-shadow: 0 10px 30px -10px var(--accent-glow);
-        }
-        .header-icon svg { width: 32px; height: 32px; fill: white; }
-        h1 { color: var(--text-primary); font-size: 1.75rem; font-weight: 700; margin-bottom: 0.5rem; }
-        .subtitle { color: var(--text-secondary); font-size: 0.95rem; }
-        .form-group { margin-bottom: 1.5rem; }
-        label { display: block; color: var(--text-primary); font-weight: 500; font-size: 0.9rem; margin-bottom: 0.5rem; }
-        label span { color: var(--text-secondary); font-weight: 400; font-size: 0.8rem; }
-        input[type="text"], textarea {
-            width: 100%;
-            background: var(--bg-primary);
+            background: var(--bg-secondary);
             border: 1px solid var(--border-color);
             border-radius: 12px;
-            padding: 1rem 1.25rem;
+            padding: 2rem;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06);
+        }
+        .header { text-align: center; margin-bottom: 1.5rem; }
+        .header-icon {
+            width: 56px; height: 56px;
+            background: var(--accent-primary);
+            border-radius: 12px;
+            display: flex; align-items: center; justify-content: center;
+            margin: 0 auto 1rem;
+        }
+        .header-icon svg { width: 28px; height: 28px; fill: white; }
+        h1 { color: var(--text-primary); font-size: 1.5rem; font-weight: 600; margin-bottom: 0.25rem; }
+        .subtitle { color: var(--text-secondary); font-size: 0.9rem; }
+        .form-group { margin-bottom: 1.25rem; }
+        label { display: block; color: var(--text-primary); font-weight: 500; font-size: 0.875rem; margin-bottom: 0.5rem; }
+        label span { color: var(--text-secondary); font-weight: 400; font-size: 0.75rem; }
+        input[type="text"], textarea {
+            width: 100%;
+            background: #FFFFFF;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 0.75rem 1rem;
             color: var(--text-primary);
             font-family: inherit;
-            font-size: 1rem;
-            transition: all 0.3s ease;
+            font-size: 0.9rem;
+            transition: border-color 0.15s ease, box-shadow 0.15s ease;
             outline: none;
         }
         input:focus, textarea:focus {
             border-color: var(--accent-primary);
-            box-shadow: 0 0 0 3px var(--accent-glow);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
         }
-        textarea { min-height: 280px; resize: vertical; line-height: 1.6; }
+        input:disabled, textarea:disabled {
+            background: var(--bg-tertiary);
+            color: var(--text-secondary);
+        }
+        textarea { min-height: 200px; resize: vertical; line-height: 1.5; }
         .btn {
             width: 100%;
-            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            background: var(--accent-primary);
             color: white;
             border: none;
-            border-radius: 12px;
-            padding: 1rem 2rem;
+            border-radius: 8px;
+            padding: 0.75rem 1.5rem;
             font-family: inherit;
-            font-size: 1rem;
-            font-weight: 600;
+            font-size: 0.9rem;
+            font-weight: 500;
             cursor: pointer;
-            transition: all 0.3s ease;
+            transition: background-color 0.15s ease;
             display: flex;
             align-items: center;
             justify-content: center;
             gap: 0.5rem;
         }
-        .btn:hover { transform: translateY(-2px); box-shadow: 0 10px 30px -10px var(--accent-glow); }
-        .btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
-        .btn svg { width: 20px; height: 20px; fill: currentColor; }
+        .btn:hover { background: #1D4ED8; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn svg { width: 18px; height: 18px; fill: currentColor; }
         .message {
-            padding: 1rem 1.25rem;
-            border-radius: 12px;
-            margin-top: 1.5rem;
+            padding: 0.75rem 1rem;
+            border-radius: 8px;
+            margin-top: 1rem;
             display: none;
             align-items: center;
-            gap: 0.75rem;
-            font-weight: 500;
+            gap: 0.5rem;
+            font-size: 0.875rem;
         }
-        .message.success { background: rgba(16, 185, 129, 0.15); border: 1px solid var(--success); color: var(--success); display: flex; }
-        .message.error { background: rgba(239, 68, 68, 0.15); border: 1px solid var(--error); color: var(--error); display: flex; }
-        .message svg { width: 24px; height: 24px; fill: currentColor; }
-        .spinner { width: 20px; height: 20px; border: 2px solid rgba(255,255,255,0.3); border-top-color: white; border-radius: 50%; animation: spin 0.8s linear infinite; }
+        .message.success { background: rgba(16, 185, 129, 0.1); border: 1px solid var(--success); color: #047857; display: flex; }
+        .message.error { background: rgba(239, 68, 68, 0.1); border: 1px solid var(--error); color: #B91C1C; display: flex; }
+        .message svg { width: 18px; height: 18px; fill: currentColor; }
+        .spinner { width: 18px; height: 18px; border: 2px solid rgba(255,255,255,0.3); border-top-color: white; border-radius: 50%; animation: spin 0.8s linear infinite; }
         @keyframes spin { to { transform: rotate(360deg); } }
         .info-badge {
             display: inline-flex; align-items: center; gap: 0.5rem;
             background: var(--bg-tertiary);
             color: var(--text-secondary);
-            font-size: 0.8rem;
-            padding: 0.5rem 1rem;
-            border-radius: 20px;
-            margin-bottom: 1.5rem;
+            font-size: 0.75rem;
+            padding: 0.375rem 0.75rem;
+            border-radius: 6px;
+            margin-bottom: 1.25rem;
         }
         .info-badge svg { width: 14px; height: 14px; fill: currentColor; }
-        .info-badge.loaded { background: rgba(16, 185, 129, 0.15); color: #10b981; }
-        .info-badge.error { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+        .info-badge.loaded { background: rgba(16, 185, 129, 0.1); color: #047857; }
+        .info-badge.error { background: rgba(239, 68, 68, 0.1); color: #B91C1C; }
         .loading-overlay {
             position: fixed; inset: 0;
-            background: rgba(15, 15, 26, 0.8);
+            background: rgba(255, 255, 255, 0.9);
             display: none;
             align-items: center; justify-content: center;
             z-index: 100;
         }
         .loading-overlay.active { display: flex; }
         .loading-content { text-align: center; color: var(--text-primary); }
-        .loading-spinner { width: 50px; height: 50px; border: 3px solid var(--border-color); border-top-color: var(--accent-primary); border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 1rem; }
-        .request-id { font-size: 0.7rem; color: var(--text-secondary); text-align: center; margin-top: 1.5rem; opacity: 0.5; }
+        .loading-spinner { width: 40px; height: 40px; border: 3px solid var(--border-color); border-top-color: var(--accent-primary); border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 1rem; }
+        .request-id { font-size: 0.7rem; color: var(--text-secondary); text-align: center; margin-top: 1.25rem; }
         
         /* Actions Section Styles */
         .actions-section {
-            background: var(--bg-primary);
+            background: var(--bg-tertiary);
             border: 1px solid var(--border-color);
-            border-radius: 12px;
-            padding: 1.25rem;
-            margin-bottom: 1.5rem;
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1.25rem;
         }
         .actions-title {
             color: var(--text-primary);
@@ -436,33 +425,33 @@ function generateFormPage(id, email, subject, body, status = 'loaded') {
         }
         .btn-action {
             width: 100%;
-            background: linear-gradient(135deg, #f59e0b, #d97706);
+            background: #F59E0B;
             color: white;
             border: none;
             border-radius: 8px;
             padding: 0.75rem 1.5rem;
             font-family: inherit;
             font-size: 0.9rem;
-            font-weight: 600;
+            font-weight: 500;
             cursor: pointer;
-            transition: all 0.3s ease;
+            transition: background-color 0.15s ease;
             display: flex;
             align-items: center;
             justify-content: center;
             gap: 0.5rem;
             margin-top: 1rem;
         }
-        .btn-action:hover { transform: translateY(-1px); box-shadow: 0 8px 20px -8px rgba(245, 158, 11, 0.5); }
-        .btn-action:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+        .btn-action:hover { background: #D97706; }
+        .btn-action:disabled { opacity: 0.5; cursor: not-allowed; }
         .btn-action svg { width: 18px; height: 18px; fill: currentColor; }
 
         /* Rewrite with Feedback Styles */
         .rewrite-section {
-            background: var(--bg-primary);
+            background: var(--bg-tertiary);
             border: 1px solid var(--border-color);
-            border-radius: 12px;
-            padding: 1.25rem;
-            margin-bottom: 1.5rem;
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1.25rem;
         }
         .rewrite-header {
             display: flex;
@@ -478,25 +467,25 @@ function generateFormPage(id, email, subject, body, status = 'loaded') {
             align-items: center;
             gap: 0.5rem;
         }
-        .rewrite-title svg { width: 18px; height: 18px; fill: var(--accent-secondary); }
+        .rewrite-title svg { width: 18px; height: 18px; fill: var(--accent-primary); }
         .btn-apply {
-            background: linear-gradient(135deg, #10b981, #059669);
+            background: #10B981;
             color: white;
             border: none;
-            border-radius: 8px;
-            padding: 0.6rem 1.25rem;
+            border-radius: 6px;
+            padding: 0.5rem 1rem;
             font-family: inherit;
-            font-size: 0.85rem;
-            font-weight: 600;
+            font-size: 0.8rem;
+            font-weight: 500;
             cursor: pointer;
-            transition: all 0.3s ease;
+            transition: background-color 0.15s ease;
             display: flex;
             align-items: center;
             gap: 0.4rem;
         }
-        .btn-apply:hover { transform: translateY(-1px); box-shadow: 0 8px 20px -8px rgba(16, 185, 129, 0.5); }
-        .btn-apply:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
-        .btn-apply svg { width: 16px; height: 16px; fill: currentColor; }
+        .btn-apply:hover { background: #059669; }
+        .btn-apply:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-apply svg { width: 14px; height: 14px; fill: currentColor; }
         .rewrite-textarea {
             width: 100%;
             background: var(--bg-secondary);
@@ -519,29 +508,29 @@ function generateFormPage(id, email, subject, body, status = 'loaded') {
         .ai-badge {
             display: inline-flex;
             align-items: center;
-            gap: 0.3rem;
-            background: linear-gradient(135deg, rgba(139, 92, 246, 0.2), rgba(99, 102, 241, 0.2));
-            color: var(--accent-secondary);
-            font-size: 0.7rem;
+            gap: 0.25rem;
+            background: rgba(37, 99, 235, 0.1);
+            color: var(--accent-primary);
+            font-size: 0.65rem;
             font-weight: 600;
-            padding: 0.25rem 0.5rem;
+            padding: 0.2rem 0.4rem;
             border-radius: 4px;
             margin-left: 0.5rem;
         }
-        .ai-badge svg { width: 12px; height: 12px; fill: currentColor; }
+        .ai-badge svg { width: 10px; height: 10px; fill: currentColor; }
 
         /* Two Section Layout */
         .sections-container {
             display: grid;
             grid-template-columns: 1fr;
-            gap: 1.5rem;
-            margin-top: 1.5rem;
+            gap: 1.25rem;
+            margin-top: 1.25rem;
         }
         .section-panel {
-            background: var(--bg-primary);
+            background: var(--bg-tertiary);
             border: 1px solid var(--border-color);
-            border-radius: 16px;
-            padding: 1.5rem;
+            border-radius: 8px;
+            padding: 1.25rem;
             display: flex;
             flex-direction: column;
         }
@@ -549,37 +538,37 @@ function generateFormPage(id, email, subject, body, status = 'loaded') {
             display: flex;
             align-items: center;
             gap: 0.75rem;
-            margin-bottom: 1.25rem;
-            padding-bottom: 1rem;
+            margin-bottom: 1rem;
+            padding-bottom: 0.75rem;
             border-bottom: 1px solid var(--border-color);
         }
         .section-panel-icon {
-            width: 40px;
-            height: 40px;
-            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
-            border-radius: 10px;
+            width: 36px;
+            height: 36px;
+            background: var(--accent-primary);
+            border-radius: 8px;
             display: flex;
             align-items: center;
             justify-content: center;
             flex-shrink: 0;
         }
         .section-panel-icon svg {
-            width: 20px;
-            height: 20px;
+            width: 18px;
+            height: 18px;
             fill: white;
         }
         .section-panel-icon.action-icon {
-            background: linear-gradient(135deg, #f59e0b, #d97706);
+            background: #F59E0B;
         }
         .section-panel-title {
             color: var(--text-primary);
-            font-size: 1.1rem;
+            font-size: 1rem;
             font-weight: 600;
         }
         .section-panel-subtitle {
             color: var(--text-secondary);
-            font-size: 0.8rem;
-            margin-top: 0.25rem;
+            font-size: 0.75rem;
+            margin-top: 0.125rem;
         }
         .section-content {
             flex: 1;
@@ -736,9 +725,6 @@ function generateFormPage(id, email, subject, body, status = 'loaded') {
                     <span id="messageText"></span>
                 </div>
             </form>
-            <div class="n8n-footer">
-                <span>Form automated with <span class="n8n-logo">∞ n8n</span></span>
-            </div>
             <div class="request-id">Request ID: ${escapeHtml(id)}</div>
         </div>
     </div>
@@ -758,6 +744,23 @@ function generateFormPage(id, email, subject, body, status = 'loaded') {
             const requestId = document.getElementById('requestId').value;
             const bodyTextarea = document.getElementById('body');
             const rewriteFeedback = document.getElementById('rewriteFeedback');
+
+            const subjectInput = document.getElementById('subject');
+            const originalSubject = subjectInput.value;
+            const originalBody = bodyTextarea.value;
+
+            // Track edits: disable Quick Actions when subject or body is modified
+            function checkForEdits() {
+                const hasEdits = subjectInput.value !== originalSubject || bodyTextarea.value !== originalBody;
+                actionBtn.disabled = hasEdits;
+                document.querySelectorAll('input[name="action"]').forEach(r => r.disabled = hasEdits);
+                if (hasEdits) {
+                    document.querySelector('input[name="action"]:checked')?.checked && (document.querySelector('input[name="action"]:checked').checked = false);
+                }
+            }
+
+            subjectInput.addEventListener('input', checkForEdits);
+            bodyTextarea.addEventListener('input', checkForEdits);
 
             const icons = {
                 success: '<path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>',
@@ -812,6 +815,7 @@ function generateFormPage(id, email, subject, body, status = 'loaded') {
                     // Update the body textarea with the rewritten content
                     bodyTextarea.value = result.rewrittenBody;
                     rewriteFeedback.value = ''; // Clear feedback after successful rewrite
+                    checkForEdits(); // Re-check edits after AI rewrite
                     showMessage('Email rewritten successfully!', true);
                 } catch (error) {
                     showMessage('Rewrite failed: ' + error.message, false);
@@ -855,8 +859,14 @@ function generateFormPage(id, email, subject, body, status = 'loaded') {
 
                     if (!response.ok) throw new Error('HTTP ' + response.status);
                     showMessage(action === 'approve' ? 'Email approved and sent!' : 'Process stopped successfully!', true);
+                    // Disable all buttons and inputs after successful submission
                     actionBtn.disabled = true;
                     submitBtn.disabled = true;
+                    applyBtn.disabled = true;
+                    document.getElementById('subject').disabled = true;
+                    document.getElementById('body').disabled = true;
+                    rewriteFeedback.disabled = true;
+                    document.querySelectorAll('input[name="action"]').forEach(r => r.disabled = true);
                 } catch (error) {
                     showMessage('Action failed: ' + error.message, false);
                     actionBtn.disabled = false;
@@ -902,7 +912,14 @@ function generateFormPage(id, email, subject, body, status = 'loaded') {
 
                     if (!response.ok) throw new Error('HTTP ' + response.status);
                     showMessage('Email submitted successfully!', true);
+                    // Disable all buttons and inputs after successful submission
                     submitBtn.disabled = true;
+                    actionBtn.disabled = true;
+                    applyBtn.disabled = true;
+                    document.getElementById('subject').disabled = true;
+                    document.getElementById('body').disabled = true;
+                    rewriteFeedback.disabled = true;
+                    document.querySelectorAll('input[name="action"]').forEach(r => r.disabled = true);
                 } catch (error) {
                     showMessage('Failed to send: ' + error.message, false);
                 } finally {
